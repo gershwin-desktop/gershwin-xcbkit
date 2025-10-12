@@ -427,6 +427,18 @@ static XCBConnection *sharedInstance;
         [window parentWindow] != [self rootWindowForScreenNumber:0])
         [NSThread detachNewThreadSelector:@selector(createPixmapDelayed) toTarget:window withObject:nil];*/
 
+    // Ensure desktop stays at bottom when any window is mapped
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    if (![[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]])
+    {
+        XCBWindow *desktop = [self findDesktopWindow];
+        if (desktop)
+        {
+            [desktop stackAtBottom];
+        }
+    }
+    ewmhService = nil;
+
     window = nil;
     cairoDrawer = nil;
 }
@@ -809,6 +821,72 @@ static XCBConnection *sharedInstance;
     unsigned short i = 0;
     XCBWindow *window = [self windowForXCBId:anEvent->window];
 
+    /*** Check if this is a desktop window trying to change stack mode ***/
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    if ([[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]])
+    {
+        // Desktop window - strip out any stacking changes and force to bottom
+        NSLog(@"Desktop window %u configure request - stripping stack mode and forcing to bottom", anEvent->window);
+        
+        if (anEvent->value_mask & XCB_CONFIG_WINDOW_X)
+        {
+            config_win_mask |= XCB_CONFIG_WINDOW_X;
+            config_win_vals[i++] = anEvent->x;
+        }
+
+        if (anEvent->value_mask & XCB_CONFIG_WINDOW_Y)
+        {
+            config_win_mask |= XCB_CONFIG_WINDOW_Y;
+            config_win_vals[i++] = anEvent->y;
+        }
+
+        if (anEvent->value_mask & XCB_CONFIG_WINDOW_WIDTH)
+        {
+            config_win_mask |= XCB_CONFIG_WINDOW_WIDTH;
+            config_win_vals[i++] = anEvent->width;
+        }
+
+        if (anEvent->value_mask & XCB_CONFIG_WINDOW_HEIGHT)
+        {
+            config_win_mask |= XCB_CONFIG_WINDOW_HEIGHT;
+            config_win_vals[i++] = anEvent->height;
+        }
+
+        if (anEvent->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH)
+        {
+            config_win_mask |= XCB_CONFIG_WINDOW_BORDER_WIDTH;
+            config_win_vals[i++] = anEvent->border_width;
+        }
+
+        // IMPORTANT: Ignore SIBLING and STACK_MODE for desktop windows
+        // This prevents GWorkspace from raising itself
+
+        xcb_configure_window(connection, anEvent->window, config_win_mask, config_win_vals);
+
+        // Force desktop to bottom after configuration
+        [window stackAtBottom];
+        
+        xcb_configure_notify_event_t event;
+        event.event = anEvent->window;
+        event.window = anEvent->window;
+        event.x = anEvent->x;
+        event.y = anEvent->y;
+        event.border_width = anEvent->border_width;
+        event.width = anEvent->width;
+        event.height = anEvent->height;
+        event.override_redirect = 0;
+        event.above_sibling = XCB_NONE;
+        event.response_type = XCB_CONFIGURE_NOTIFY;
+        event.sequence = 0;
+
+        [self sendEvent:(const  char*) &event toClient:window propagate:NO];
+        
+        ewmhService = nil;
+        window = nil;
+        return;
+    }
+    ewmhService = nil;
+
     /*** Handle configure requests (has it is) for windows we don't manage ***/
 
     if (window == nil || ![window decorated])
@@ -892,6 +970,18 @@ static XCBConnection *sharedInstance;
 
     // NSLog(@"In configure notify for window %u: %d, %d", anEvent->window, anEvent->x, anEvent->y);
 
+    // Ensure desktop stays at bottom after any configure
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    if (![[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]])
+    {
+        XCBWindow *desktop = [self findDesktopWindow];
+        if (desktop)
+        {
+            [desktop stackAtBottom];
+        }
+    }
+    ewmhService = nil;
+
     window = nil;
 
 }
@@ -900,6 +990,16 @@ static XCBConnection *sharedInstance;
 {
     XCBWindow *window = [self windowForXCBId:anEvent->event];
     XCBFrame *frame;
+    
+    // Ignore motion events on desktop windows
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    if ([[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]])
+    {
+        ewmhService = nil;
+        window = nil;
+        return;
+    }
+    ewmhService = nil;
 
     if (dragState && [window isKindOfClass:[XCBTitleBar class]]
         /*([window window] != [rootWindow window]) &&
@@ -992,6 +1092,18 @@ static XCBConnection *sharedInstance;
 - (void)handleButtonPress:(xcb_button_press_event_t *)anEvent
 {
     XCBWindow *window = [self windowForXCBId:anEvent->event];
+    
+    // Ignore button presses on desktop windows
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    if ([[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]])
+    {
+        NSLog(@"Ignoring button press on desktop window %u", [window window]);
+        ewmhService = nil;
+        window = nil;
+        return;
+    }
+    ewmhService = nil;
+    
     XCBFrame *frame;
     XCBTitleBar *titleBar;
     XCBWindow *clientWindow;
@@ -1096,7 +1208,7 @@ static XCBConnection *sharedInstance;
         xcb_allow_events(connection, XCB_ALLOW_REPLAY_POINTER, anEvent->time);
         frame = (XCBFrame *) [window parentWindow];
         clientWindow = [frame childWindowForKey:ClientWindow];
-        EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+        ewmhService = [EWMHService sharedInstanceWithConnection:self];
         [ewmhService updateNetActiveWindow:window];
         ewmhService = nil;
 
@@ -1104,6 +1216,15 @@ static XCBConnection *sharedInstance;
 
     [clientWindow focus];
     [frame stackAbove];
+    
+    // Ensure desktop stays at bottom after stacking operations
+    EWMHService *tempEwmhService = [EWMHService sharedInstanceWithConnection:self];
+    XCBWindow *desktop = [self findDesktopWindow];
+    if (desktop)
+    {
+        [desktop stackAtBottom];
+    }
+    tempEwmhService = nil;
 
     titleBar = (XCBTitleBar *) [frame childWindowForKey:TitleBar];
     [titleBar setIsAbove:YES];
@@ -1134,6 +1255,16 @@ static XCBConnection *sharedInstance;
 {
     XCBWindow *window = [self windowForXCBId:anEvent->event];
     XCBFrame *frame;
+    
+    // Ignore button release on desktop windows
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    if ([[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]])
+    {
+        ewmhService = nil;
+        window = nil;
+        return;
+    }
+    ewmhService = nil;
 
     if ([window isKindOfClass:[XCBFrame class]])
     {
@@ -1373,6 +1504,16 @@ static XCBConnection *sharedInstance;
 {
     NSLog(@"Enter notify for window: %u", anEvent->event);
     XCBWindow *window = [self windowForXCBId:anEvent->event];
+    
+    // Ignore enter notify on desktop windows
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    if ([[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]])
+    {
+        ewmhService = nil;
+        window = nil;
+        return;
+    }
+    ewmhService = nil;
 
     if ([window isKindOfClass:[XCBWindow class]] &&
         [[window parentWindow] isKindOfClass:[XCBFrame class]])

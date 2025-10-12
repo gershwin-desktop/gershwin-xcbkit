@@ -836,6 +836,17 @@
 
 - (void)stackAbove
 {
+    // Desktop windows should never be stacked above
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:connection];
+    if ([[self windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]])
+    {
+        NSLog(@"Preventing desktop window %u from stacking above - keeping at bottom", window);
+        ewmhService = nil;
+        [self stackAtBottom];
+        return;
+    }
+    ewmhService = nil;
+    
     uint32_t values[1] = {XCB_STACK_MODE_ABOVE};
     xcb_configure_window([connection connection], window, XCB_CONFIG_WINDOW_STACK_MODE, &values);
     isAbove = YES;
