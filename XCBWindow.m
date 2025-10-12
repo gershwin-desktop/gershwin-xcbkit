@@ -1168,7 +1168,6 @@
     ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:connection];
     xcb_icccm_wm_hints_t hints = [icccmService wmHintsFromWindow:self];
 
-
     if ([cachedWMHints count] != 0)
         [cachedWMHints removeAllObjects];
 
@@ -1182,8 +1181,18 @@
     [cachedWMHints setValue:[NSNumber numberWithInt:hints.icon_x] forKey:FnFromNSIntegerToNSString(ICCCMIconPositionHintX)];
     [cachedWMHints setValue:[NSNumber numberWithInt:hints.icon_y] forKey:FnFromNSIntegerToNSString(ICCCMIconPositionHintY)];
 
-    if ([[cachedWMHints valueForKey:FnFromNSIntegerToNSString(ICCCMFlags)] intValue] & ICCCMInputHint)
+    // ICCCM 4.1.7: "If the window does not set the InputHint flag in WM_HINTS,
+    // the window manager should assume that the client wants input"
+    if (hints.flags & XCB_ICCCM_WM_HINT_INPUT)
+    {
+        // InputHint flag is set, use the actual input field value
+        hasInputHint = (hints.input == 1);
+    }
+    else
+    {
+        // InputHint flag not set, default to TRUE (assume client wants input)
         hasInputHint = YES;
+    }
 
     icccmService = nil;
 }
