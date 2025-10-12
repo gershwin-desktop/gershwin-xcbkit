@@ -750,7 +750,7 @@ static XCBConnection *sharedInstance;
     [frame setScreen:[window screen]];
     [window setNormalState];
     [frame setNormalState];
-    [frame stackBelow];
+    [frame stackAbove];
     [[frame childWindowForKey:TitleBar] setIsAbove:YES];
     [self drawAllTitleBarsExcept:(XCBTitleBar*)[frame childWindowForKey:TitleBar]];
     [icccmService wmClassForWindow:window];
@@ -1077,7 +1077,7 @@ static XCBConnection *sharedInstance;
     }
 
     [clientWindow focus];
-    //[frame stackAbove];
+    [frame stackAbove];
 
     titleBar = (XCBTitleBar *) [frame childWindowForKey:TitleBar];
     [titleBar setIsAbove:YES];
