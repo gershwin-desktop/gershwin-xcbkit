@@ -440,6 +440,34 @@ static XCBConnection *sharedInstance;
     XCBFrame *frameWindow = (XCBFrame *) [window parentWindow];
 
     XCBScreen *scr = [window onScreen];
+    
+    // Clear _NET_ACTIVE_WINDOW if this was the active window
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    XCBWindow *rootWindow = [scr rootWindow];
+    
+    xcb_get_property_reply_t *reply = [ewmhService getProperty:[ewmhService EWMHActiveWindow]
+                                                  propertyType:XCB_ATOM_WINDOW
+                                                     forWindow:rootWindow
+                                                        delete:NO
+                                                        length:1];
+    
+    if (reply && reply->length > 0)
+    {
+        xcb_window_t *activeWin = xcb_get_property_value(reply);
+        if (*activeWin == [window window])
+        {
+            xcb_window_t none = XCB_NONE;
+            [ewmhService changePropertiesForWindow:rootWindow
+                                          withMode:XCB_PROP_MODE_REPLACE
+                                      withProperty:[ewmhService EWMHActiveWindow]
+                                          withType:XCB_ATOM_WINDOW
+                                        withFormat:32
+                                    withDataLength:1
+                                          withData:&none];
+            NSLog(@"[%u] Cleared _NET_ACTIVE_WINDOW", [window window]);
+        }
+        free(reply);
+    }
 
     if (frameWindow &&
         ![frameWindow isMinimized] &&
@@ -454,8 +482,9 @@ static XCBConnection *sharedInstance;
 
     window = nil;
     frameWindow = nil;
-    frameWindow = nil;
     scr = nil;
+    ewmhService = nil;
+    rootWindow = nil;
 }
 
 - (void)handleMapRequest:(xcb_map_request_event_t *)anEvent
@@ -497,6 +526,15 @@ static XCBConnection *sharedInstance;
     {
         window = [[XCBWindow alloc] initWithXCBWindow:anEvent->window andConnection:self];
         [window updateAttributes];
+        
+        // Select PropertyChange events on client window
+        uint32_t clientMask[] = {CLIENT_SELECT_INPUT_EVENT_MASK};
+        xcb_change_window_attributes([self connection], 
+                                      [window window], 
+                                      XCB_CW_EVENT_MASK, 
+                                      clientMask);
+        NSLog(@"[%u] Selected PropertyChange events on client window", [window window]);
+        
         [window refreshCachedWMHints];
 
         xcb_window_t leader = [[[window cachedWMHints] valueForKey:FnFromNSIntegerToNSString(ICCCMWindowGroupHint)] unsignedIntValue];
@@ -1141,17 +1179,32 @@ static XCBConnection *sharedInstance;
 - (void) handlePropertyNotify:(xcb_property_notify_event_t*)anEvent
 {
     XCBAtomService *atomService = [XCBAtomService sharedInstanceWithConnection:self];
-    NSString *testStr = @"_NET_ACTIVE_WINDOW";
-
+    ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:self];
+    
     NSString *name = [atomService atomNameFromAtom:anEvent->atom];
     NSLog(@"Property changed for window: %u, with name: %@", anEvent->window, name);
 
-    if ([name isEqualToString:testStr])
-        NSLog(@"We got it!");
+    XCBWindow *window = [self windowForXCBId:anEvent->window];
+    
+    if (!window)
+    {
+        atomService = nil;
+        icccmService = nil;
+        name = nil;
+        return;
+    }
+
+    // Re-read WM_HINTS when it changes
+    if ([name isEqualToString:@"WM_HINTS"])
+    {
+        NSLog(@"[%u] WM_HINTS changed, re-reading...", anEvent->window);
+        [window refreshCachedWMHints];
+    }
 
     atomService = nil;
-    testStr = nil;
+    icccmService = nil;
     name = nil;
+    window = nil;
 
     return;
 }
@@ -1639,7 +1692,7 @@ static XCBConnection *sharedInstance;
 
             if (titleBar != aTitileBar)
             {
-                XCBFrame *frame = (XCBFrame *) [titleBar parentWindow];
+		XCBFrame *frame = (XCBFrame *) [titleBar parentWindow];
                 XCBWindow *clientWindow = [frame childWindowForKey:ClientWindow];
 
                 if ([clientWindow alwaysOnTop])
