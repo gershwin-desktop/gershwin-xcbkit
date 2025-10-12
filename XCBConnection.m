@@ -1574,6 +1574,36 @@ static XCBConnection *sharedInstance;
         clientWindow = [frameWindow childWindowForKey:ClientWindow];
     }
 
+    // Clear _NET_ACTIVE_WINDOW if this was the active window being destroyed
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    XCBWindow *rootWindow = [self rootWindowForScreenNumber:0];
+    
+    xcb_get_property_reply_t *reply = [ewmhService getProperty:[ewmhService EWMHActiveWindow]
+                                                  propertyType:XCB_ATOM_WINDOW
+                                                     forWindow:rootWindow
+                                                        delete:NO
+                                                        length:1];
+    
+    if (reply && reply->length > 0)
+    {
+        xcb_window_t *activeWin = xcb_get_property_value(reply);
+        // Check if either the window itself or its client window was active
+        if (*activeWin == [window window] || 
+            (clientWindow && *activeWin == [clientWindow window]))
+        {
+            xcb_window_t none = XCB_NONE;
+            [ewmhService changePropertiesForWindow:rootWindow
+                                          withMode:XCB_PROP_MODE_REPLACE
+                                      withProperty:[ewmhService EWMHActiveWindow]
+                                          withType:XCB_ATOM_WINDOW
+                                        withFormat:32
+                                    withDataLength:1
+                                          withData:&none];
+            NSLog(@"[%u] Cleared _NET_ACTIVE_WINDOW on destroy", [window window]);
+        }
+        free(reply);
+    }
+
     if (frameWindow != nil &&
         [frameWindow needDestroy]) /*evaluete if the check on destroy window is necessary or not */
     {
@@ -1589,11 +1619,26 @@ static XCBConnection *sharedInstance;
 
     [self unregisterWindow:window];
 
+    // Focus another window if available
+    NSArray *windows = [windowsMap allValues];
+    for (XCBWindow *win in windows)
+    {
+        if ([win isMapped] && 
+            [win isKindOfClass:[XCBWindow class]] &&
+            [[win parentWindow] isKindOfClass:[XCBFrame class]])
+        {
+            [win focus];
+            NSLog(@"[%u] Auto-focused window after destroy", [win window]);
+            break;
+        }
+    }
 
     frameWindow = nil;
     titleBarWindow = nil;
     window = nil;
     clientWindow = nil;
+    ewmhService = nil;
+    rootWindow = nil;
 
     return;
 }
