@@ -844,8 +844,22 @@
 
 - (void)stackBelow
 {
-    uint32_t values[1] = {XCB_STACK_MODE_BELOW};
-    xcb_configure_window([connection connection], window, XCB_CONFIG_WINDOW_STACK_MODE, &values);
+    uint32_t values[2];
+    values[0] = XCB_NONE;  // No sibling - put at bottom
+    values[1] = XCB_STACK_MODE_BELOW;
+    xcb_configure_window([connection connection], window,
+                         XCB_CONFIG_WINDOW_SIBLING | XCB_CONFIG_WINDOW_STACK_MODE,
+                         values);
+    isAbove = NO;
+    isBelow = YES;
+    [connection flush];
+}
+
+- (void)stackAtBottom
+{
+    // Use xcb_circulate_window to move to absolute bottom
+    xcb_circulate_window([connection connection], XCB_CIRCULATE_LOWER_HIGHEST, window);
+    [connection flush];
     isAbove = NO;
     isBelow = YES;
 }

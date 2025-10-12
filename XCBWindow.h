@@ -163,6 +163,7 @@ typedef NS_ENUM(NSInteger, WindowState)
 - (void) destroy;
 - (void) stackAbove;
 - (void) stackBelow;
+- (void) stackAtBottom;
 - (void) grabButton;
 - (void) ungrabButton;
 - (void) description;
