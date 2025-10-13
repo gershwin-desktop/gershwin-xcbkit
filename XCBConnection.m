@@ -412,21 +412,6 @@ static XCBConnection *sharedInstance;
     [window setIsMapped:YES];
     CairoDrawer *cairoDrawer;
 
-    /*** FIXME: This code is just for testing ***/
-    /*if ([window isKindOfClass:[XCBTitleBar class]])
-    {
-        titleBar = (XCBTitleBar*)window;
-        cairoDrawer = [[CairoDrawer alloc] initWithConnection:self window:titleBar];
-        [cairoDrawer drawContent];
-    }*/
-
-    /*** use this for slower machines?**/
-
-    /*if ([window pixmap] == 0 && [window isKindOfClass:[XCBWindow class]] &&
-        [[window parentWindow] isKindOfClass:[XCBFrame class]] &&
-        [window parentWindow] != [self rootWindowForScreenNumber:0])
-        [NSThread detachNewThreadSelector:@selector(createPixmapDelayed) toTarget:window withObject:nil];*/
-
     // Ensure desktop stays at bottom when any window is mapped
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
     if (![[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]])
@@ -529,33 +514,107 @@ static XCBConnection *sharedInstance;
             {
                 NSLog(@"[MapRequest] Restoring minimized window from GNUstep");
                 
-                // Map everything
-                [self mapWindow:frame];
+                // Check if this window belongs to a group (has a leader)
+                XCBWindow *leader = [window leaderWindow];
                 
-                if (titleBar)
+                if (leader && [leader window] != XCB_NONE)
                 {
-                    [self mapWindow:titleBar];
+                    NSLog(@"[MapRequest] Window %u has leader %u, restoring all grouped windows", 
+                          [window window], [leader window]);
+                    
+                    // Find and restore all windows with the same leader
+                    NSArray *allWindows = [windowsMap allValues];
+                    for (XCBWindow *groupedWindow in allWindows)
+                    {
+                        // Skip windows that aren't minimized or don't share the same leader
+                        if (![groupedWindow isMinimized])
+                            continue;
+                            
+                        XCBWindow *groupedLeader = [groupedWindow leaderWindow];
+                        if (!groupedLeader || [groupedLeader window] != [leader window])
+                            continue;
+                        
+                        // This window is part of the group and minimized - restore it
+                        NSLog(@"[MapRequest] Restoring grouped window %u", [groupedWindow window]);
+                        
+                        XCBFrame *groupedFrame = nil;
+                        XCBTitleBar *groupedTitleBar = nil;
+                        
+                        if ([[groupedWindow parentWindow] isKindOfClass:[XCBFrame class]])
+                        {
+                            groupedFrame = (XCBFrame *)[groupedWindow parentWindow];
+                            groupedTitleBar = (XCBTitleBar *)[groupedFrame childWindowForKey:TitleBar];
+                            
+                            [self mapWindow:groupedFrame];
+                            
+                            if (groupedTitleBar)
+                            {
+                                [self mapWindow:groupedTitleBar];
+                            }
+                        }
+                        
+                        [self mapWindow:groupedWindow];
+                        
+                        // Clear minimized state
+                        if (groupedFrame)
+                        {
+                            [groupedFrame setIsMinimized:NO];
+                            [groupedFrame setNormalState];
+                        }
+                        [groupedWindow setIsMinimized:NO];
+                        [groupedWindow setNormalState];
+                        
+                        // Focus and stack (but only do this for the originally requested window)
+                        if ([groupedWindow window] == [window window])
+                        {
+                            if (groupedFrame)
+                            {
+                                [groupedFrame stackAbove];
+                            }
+                            
+                            if (groupedTitleBar)
+                            {
+                                [groupedTitleBar setIsAbove:YES];
+                                [groupedTitleBar drawTitleBarComponents];
+                                [self drawAllTitleBarsExcept:groupedTitleBar];
+                            }
+                            
+                            [groupedWindow focus];
+                        }
+                    }
                 }
-                
-                [self mapWindow:window];
-                
-                // Clear minimized state
-                [frame setIsMinimized:NO];
-                [window setIsMinimized:NO];
-                [frame setNormalState];
-                [window setNormalState];
-                
-                // Bring to front and focus
-                [frame stackAbove];
-                
-                if (titleBar)
+                else
                 {
-                    [titleBar setIsAbove:YES];
-                    [titleBar drawTitleBarComponents];
-                    [self drawAllTitleBarsExcept:titleBar];
+                    // No leader/group - restore just this window
+                    NSLog(@"[MapRequest] No window group, restoring single window");
+                    
+                    [self mapWindow:frame];
+                    
+                    if (titleBar)
+                    {
+                        [self mapWindow:titleBar];
+                    }
+                    
+                    [self mapWindow:window];
+                    
+                    // Clear minimized state
+                    [frame setIsMinimized:NO];
+                    [window setIsMinimized:NO];
+                    [frame setNormalState];
+                    [window setNormalState];
+                    
+                    // Bring to front and focus
+                    [frame stackAbove];
+                    
+                    if (titleBar)
+                    {
+                        [titleBar setIsAbove:YES];
+                        [titleBar drawTitleBarComponents];
+                        [self drawAllTitleBarsExcept:titleBar];
+                    }
+                    
+                    [window focus];
                 }
-                
-                [window focus];
                 
                 NSLog(@"[MapRequest] Restoration complete");
             }
