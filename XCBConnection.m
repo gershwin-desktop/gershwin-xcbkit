@@ -1348,6 +1348,7 @@ static XCBConnection *sharedInstance;
 
     }
 
+    xcb_ungrab_keyboard(connection, XCB_CURRENT_TIME);
     [clientWindow focus];
     [frame stackAbove];
     
