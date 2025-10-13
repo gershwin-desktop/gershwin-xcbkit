@@ -954,7 +954,7 @@
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:connection];
 
     if (hasInputHint)
-        [self setInputFocus:XCB_INPUT_FOCUS_PARENT time:[connection currentTime]];
+        [self setInputFocus:XCB_INPUT_FOCUS_POINTER_ROOT time:[connection currentTime]];
 
     /*** check for the WMTakeFocus protocol ***/
 

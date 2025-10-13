@@ -1449,6 +1449,9 @@ static XCBConnection *sharedInstance;
 {
     XCBWindow *window = [self windowForXCBId:anEvent->event];
 
+    NSLog(@"Focus In event for window: %u, mode: %d, detail: %d", 
+          anEvent->event, anEvent->mode, anEvent->detail);
+
     if (anEvent->mode == XCB_NOTIFY_MODE_GRAB || anEvent->mode == XCB_NOTIFY_MODE_UNGRAB)
         return;
 
@@ -1458,8 +1461,32 @@ static XCBConnection *sharedInstance;
         case XCB_NOTIFY_DETAIL_INFERIOR:
         case XCB_NOTIFY_DETAIL_NONLINEAR_VIRTUAL:
         case XCB_NOTIFY_DETAIL_NONLINEAR:
-            [window focus];
+        {
+            // Only call focus() for GNUstep apps to update menus
+            // For X11 apps, just update _NET_ACTIVE_WINDOW without calling xcb_set_input_focus again
+            NSArray *wmClass = [window windowClass];
+            BOOL isGNUstepApp = NO;
+            
+            if (wmClass && [wmClass count] >= 2)
+            {
+                NSString *className = [wmClass objectAtIndex:1];
+                isGNUstepApp = [className isEqualToString:@"GNUstep"];
+            }
+            
+            if (isGNUstepApp)
+            {
+                NSLog(@"  -> GNUstep app, calling focus() for menu update");
+                [window focus];
+            }
+            else
+            {
+                NSLog(@"  -> X11 app, just updating _NET_ACTIVE_WINDOW");
+                EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+                [ewmhService updateNetActiveWindow:window];
+                ewmhService = nil;
+            }
             break;
+        }
         default:
             break;
     }
