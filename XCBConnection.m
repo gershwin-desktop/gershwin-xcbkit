@@ -733,6 +733,15 @@ static XCBConnection *sharedInstance;
                 [self registerWindow:window];
                 [self mapWindow:window];
                 [window setDecorated:NO];
+                
+                // Stack dock above desktop
+                [window stackAbove];
+                XCBWindow *desktop = [self findDesktopWindow];
+                if (desktop)
+                {
+                    [desktop stackAtBottom];
+                }
+                
                 XCBWindow *parentWindow = [[XCBWindow alloc] initWithXCBWindow:anEvent->parent andConnection:self];
                 [window setParentWindow:parentWindow];
                 ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:self];
@@ -782,6 +791,15 @@ static XCBConnection *sharedInstance;
                 [self registerWindow:window];
                 [self mapWindow:window];
                 [window setDecorated:NO];
+                
+                // Stack menu above desktop
+                [window stackAbove];
+                XCBWindow *desktop = [self findDesktopWindow];
+                if (desktop)
+                {
+                    [desktop stackAtBottom];
+                }
+                
                 XCBWindow *parentWindow = [[XCBWindow alloc] initWithXCBWindow:anEvent->parent andConnection:self];
                 [window setParentWindow:parentWindow];
                 ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:self];
@@ -796,27 +814,6 @@ static XCBConnection *sharedInstance;
                 free(windowTypeReply);
                 return;
             }
-
-            /*if (*atom == [[ewmhService atomService] atomFromCachedAtomsWithKey:[ewmhService EWMHWMWindowTypeDialog]])
-            {
-                NSLog(@"Dialog window %u to be registered", [window window]);
-                [self registerWindow:window];
-                [self mapWindow:window];
-                [window setDecorated:NO];
-                XCBWindow *parentWindow = [[XCBWindow alloc] initWithXCBWindow:anEvent->parent andConnection:self];
-                [window setParentWindow:parentWindow];
-                ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:self];
-                [icccmService wmClassForWindow:window];
-                [window setWindowType:[ewmhService EWMHWMWindowTypeDialog]];
-
-                window = nil;
-                ewmhService = nil;
-                name = nil;
-                parentWindow = nil;
-                icccmService = nil;
-                free(windowTypeReply);
-                return;
-            }*/
 
             atom = NULL; //FIXME:is this malloc'd?
         }
@@ -2128,11 +2125,27 @@ static XCBConnection *sharedInstance;
 
 - (void)restackAllWindowsAboveDesktop:(XCBWindow *)desktopWindow
 {
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
     NSArray *windows = [windowsMap allValues];
+    
+    // First pass: Stack dock and menu windows above desktop
     for (XCBWindow *win in windows) {
         if (win != desktopWindow && 
             ![win isKindOfClass:[XCBTitleBar class]] &&
-            ![[win windowType] isEqualToString:[[EWMHService sharedInstanceWithConnection:self] EWMHWMWindowTypeDesktop]]) {
+            ([[win windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDock]] ||
+             [[win windowType] isEqualToString:[ewmhService EWMHWMWindowTypeMenu]])) {
+            NSLog(@"Restacking dock/menu window %u above desktop", [win window]);
+            [win stackAbove];
+        }
+    }
+    
+    // Second pass: Stack all other normal windows
+    for (XCBWindow *win in windows) {
+        if (win != desktopWindow && 
+            ![win isKindOfClass:[XCBTitleBar class]] &&
+            ![[win windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]] &&
+            ![[win windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDock]] &&
+            ![[win windowType] isEqualToString:[ewmhService EWMHWMWindowTypeMenu]]) {
             
             if ([win isKindOfClass:[XCBFrame class]]) {
                 [win stackAbove];
@@ -2141,6 +2154,8 @@ static XCBConnection *sharedInstance;
             }
         }
     }
+    
+    ewmhService = nil;
 }
 
 - (XCBWindow *)findDesktopWindow 
