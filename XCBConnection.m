@@ -151,6 +151,13 @@ static XCBConnection *sharedInstance;
 {
     if (!isAWindowManager)
         return;
+    
+    // Add this check
+    if (aWindow == nil)
+    {
+        NSLog(@"[XCBConnection] WARNING: Attempted to register nil window!");
+        return;
+    }
 
     xcb_window_t win = [aWindow window];
 
@@ -2175,72 +2182,47 @@ static XCBConnection *sharedInstance;
     values[0] = XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
     XCBWindow *rootWindow = [[XCBWindow alloc] initWithXCBWindow:[[screen rootWindow] window] andConnection:self];
 
-    if (replace)
+    // First, acquire the selection
+    NSString *atomName = [NSString stringWithFormat:@"WM_S%d", screenId];
+    [[ewmhService atomService] cacheAtom:atomName];
+    xcb_atom_t internedAtom = [[ewmhService atomService] atomFromCachedAtomsWithKey:atomName];
+    
+    XCBSelection *selector = [[XCBSelection alloc] initWithConnection:self andAtom:internedAtom];
+    BOOL aquired = [selector aquireWithWindow:selectionWindow replace:replace];
+    
+    if (!aquired)
     {
-        BOOL attributesChanged = [rootWindow changeAttributes:values withMask:XCB_CW_EVENT_MASK checked:YES];
-
-        if (!attributesChanged)
-        {
-            NSLog(@"Can't register as window manager. Another one running? Use --replace");
-            //NSLog(@"Trying co-runnig...");
-            //values[0] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
-
-            //attributesChanged = [self changeAttributes:values forWindow:rootWindow checked:YES];
-
-            /*if (!attributesChanged)
-             {
-             NSLog(@"Can't co-running too");
-             }*/
-            rootWindow = nil;
-            screen = nil;
-            ewmhService = nil;
-            return NO;
-        }
-
-        NSLog(@"Subtructure redirect was set to the root window");
-
+        NSLog(@"Can't acquire selection %@", atomName);
         rootWindow = nil;
         screen = nil;
         ewmhService = nil;
-        return YES;
+        selector = nil;
+        atomName = nil;
+        return NO;
     }
+    
+    // Now set substructure redirect
+    BOOL attributesChanged = [rootWindow changeAttributes:values withMask:XCB_CW_EVENT_MASK checked:YES];
 
-    NSLog(@"Replacing window manager");
-
-    NSString *atomName = [NSString stringWithFormat:@"WM_S%d", screenId];
-
-    [[ewmhService atomService] cacheAtom:atomName];
-
-    xcb_atom_t internedAtom = [[ewmhService atomService] atomFromCachedAtomsWithKey:atomName];
-
-    XCBSelection *selector = [[XCBSelection alloc] initWithConnection:self andAtom:internedAtom];
-
-    BOOL aquired = [selector aquireWithWindow:selectionWindow replace:replace];
-
-    if (aquired)
+    if (!attributesChanged)
     {
-        BOOL attributesChanged = [rootWindow changeAttributes:values withMask:XCB_CW_EVENT_MASK checked:YES];
-
-        if (!attributesChanged)
-        {
-            NSLog(@"Can't register as window manager.");
-
-            rootWindow = nil;
-            screen = nil;
-            selector = nil;
-            atomName = nil;
-            ewmhService = nil;
-            return NO;
-        }
+        NSLog(@"Can't register as window manager. Another one running? Use --replace");
+        rootWindow = nil;
+        screen = nil;
+        ewmhService = nil;
+        selector = nil;
+        atomName = nil;
+        return NO;
     }
 
-    NSLog(@"Registered as window manager");
+    NSLog(@"Substructure redirect was set to the root window");
+    NSLog(@"Registered as window manager with selection %@", atomName);
 
-    screen = nil;
     rootWindow = nil;
+    screen = nil;
+    ewmhService = nil;
     selector = nil;
     atomName = nil;
-    ewmhService = nil;
 
     return YES;
 }
