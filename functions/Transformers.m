@@ -7,7 +7,7 @@
 //
 
 #import "Transformers.h"
-
+#import "XCBThemeService.h"
 
 @implementation Transformers
 
@@ -58,8 +58,9 @@ XCBTitleBar* FnFromXCBWindowToXCBTitleBar(XCBWindow *aWindow, XCBConnection* con
     [titleBar setWindowMask:[aWindow windowMask]];
     [titleBar setIsMapped:[aWindow isMapped]];
     [titleBar setConnection:connection];
-    [titleBar setTitleBarUpColor:XCBMakeColor(0.720, 0.720, 0.720, 1)];
-    [titleBar setTitleBarDownColor:XCBMakeColor(0.898, 0.898, 0.898, 1)];
+    XCBThemeService *theme = [XCBThemeService sharedInstance];
+    [titleBar setTitleBarUpColor:[theme titleBarActiveColor]];
+    [titleBar setTitleBarDownColor:[theme titleBarInactiveColor]];
     
     return titleBar;
     

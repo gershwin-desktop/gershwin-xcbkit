@@ -19,6 +19,9 @@
 #import <xcb/xcb_aux.h>
 #import <enums/EIcccm.h>
 #import "services/TitleBarSettingsService.h"
+#import "XCBRenderingEngine.h"
+
+#define RESIZE_BAR_HEIGHT 9
 
 @implementation XCBConnection
 
@@ -96,18 +99,15 @@ static XCBConnection *sharedInstance;
 
     NSLog(@"XCBConnection: Connection: %d", fd);
 
-    /** save all screens **/
-
     [self checkScreens];
 
-    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    [EWMHService sharedInstanceWithConnection:self];
     currentTime = XCB_CURRENT_TIME;
     icccmService = [ICCCMService sharedInstanceWithConnection:self];
 
     clientListIndex = 0;
 
     resizeState = NO;
-    ewmhService = nil;
 
     [self flush];
     return self;
@@ -151,8 +151,7 @@ static XCBConnection *sharedInstance;
 {
     if (!isAWindowManager)
         return;
-    
-    // Add this check
+
     if (aWindow == nil)
     {
         NSLog(@"[XCBConnection] WARNING: Attempted to register nil window!");
@@ -414,10 +413,8 @@ static XCBConnection *sharedInstance;
 - (void)handleMapNotify:(xcb_map_notify_event_t *)anEvent
 {
     XCBWindow *window = [self windowForXCBId:anEvent->window];
-    XCBTitleBar *titleBar;
     NSLog(@"[%@] The window %u is mapped!", NSStringFromClass([self class]), [window window]);
     [window setIsMapped:YES];
-    CairoDrawer *cairoDrawer;
 
     // Ensure desktop stays at bottom when any window is mapped
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
@@ -432,7 +429,6 @@ static XCBConnection *sharedInstance;
     ewmhService = nil;
 
     window = nil;
-    cairoDrawer = nil;
 }
 
 - (void)handleUnMapNotify:(xcb_unmap_notify_event_t *)anEvent
@@ -444,7 +440,7 @@ static XCBConnection *sharedInstance;
     XCBFrame *frameWindow = (XCBFrame *) [window parentWindow];
 
     XCBScreen *scr = [window onScreen];
-    
+
     // Clear _NET_ACTIVE_WINDOW if this was the active window
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
     XCBWindow *rootWindow = [scr rootWindow];
@@ -501,13 +497,10 @@ static XCBConnection *sharedInstance;
 
     NSLog(@"[%@] Map request for window %u", NSStringFromClass([self class]), anEvent->window);
 
-    /** if already managed map it **/
-
     if (window != nil)
     {
         NSLog(@"Window %u already managed by the window manager.", [window window]);
         isManaged = YES;
-        
         // Check if this window has a frame parent (meaning it was decorated)
         if ([[window parentWindow] isKindOfClass:[XCBFrame class]])
         {
@@ -650,24 +643,11 @@ static XCBConnection *sharedInstance;
         return;
     }
 
-    /*** if already decorated and managed, map it. ***/
-
-    if ([window decorated] && isManaged)
-    {
-        NSLog(@"Window with id %u already decorated", [window window]);
-
-        [self mapWindow:window];
-        window = nil;
-
-        ewmhService = nil;
-        return;
-    }
-
     if ([window decorated] == NO && !isManaged)
     {
         window = [[XCBWindow alloc] initWithXCBWindow:anEvent->window andConnection:self];
         [window updateAttributes];
-        
+
         // Select PropertyChange events on client window
         uint32_t clientMask[] = {CLIENT_SELECT_INPUT_EVENT_MASK};
         xcb_change_window_attributes([self connection], 
@@ -675,7 +655,7 @@ static XCBConnection *sharedInstance;
                                       XCB_CW_EVENT_MASK, 
                                       clientMask);
         NSLog(@"[%u] Selected PropertyChange events on client window", [window window]);
-        
+
         [window refreshCachedWMHints];
 
         xcb_window_t leader = [[[window cachedWMHints] valueForKey:FnFromNSIntegerToNSString(ICCCMWindowGroupHint)] unsignedIntValue];
@@ -692,8 +672,6 @@ static XCBConnection *sharedInstance;
             return;
         }
 
-        /** check the ovveride redirect flag, if yes the WM must not handle the window **/
-
         if (![reply isError])
         {
             if ([reply overrideRedirect] == YES)
@@ -706,7 +684,6 @@ static XCBConnection *sharedInstance;
             reply = nil;
         }
 
-        /** check allowed actions **/
         [NSThread detachNewThreadSelector:@selector(checkNetWMAllowedActions) toTarget:window withObject:nil];
 
 
@@ -818,15 +795,11 @@ static XCBConnection *sharedInstance;
             atom = NULL; //FIXME:is this malloc'd?
         }
 
-        /** check motif hints  **/
-
         void *motifHints = [ewmhService getProperty:[ewmhService MotifWMHints]
                                        propertyType:XCB_GET_PROPERTY_TYPE_ANY
                                           forWindow:window
                                              delete:NO
                                              length:5 * sizeof(uint64_t)];
-
-        /*** this is much more for the GNUstep icon window ***/
 
         if (motifHints)
         {
@@ -842,29 +815,23 @@ static XCBConnection *sharedInstance;
                 [window setDecorated:NO];
                 [window onScreen];
                 [window updateAttributes];
-                //[window drawIcons];
                 [self mapWindow:window];
                 [self registerWindow:window];
-                ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:self];
                 [icccmService wmClassForWindow:window];
 
                 window = nil;
                 ewmhService = nil;
                 geometry = nil;
                 name = nil;
-                icccmService = nil;
                 return;
             }
 
         }
         else
         {
-            /*** while here we are for the other apps class ***/
-            
             [window generateWindowIcons];
             [window onScreen];
             [window updateAttributes];
-            //[window drawIcons];
         }
 
         [window updateRectsFromGeometries];
@@ -879,7 +846,7 @@ static XCBConnection *sharedInstance;
     XCBVisual *visual = [[XCBVisual alloc] initWithVisualId:[screen screen]->root_visual];
     [visual setVisualTypeForScreen:screen];
 
-    uint32_t values[] = {[screen screen]->white_pixel, /*XCB_BACKING_STORE_WHEN_MAPPED,*/ FRAMEMASK};
+    uint32_t values[] = {[screen screen]->white_pixel, FRAMEMASK};
     TitleBarSettingsService *settings = [TitleBarSettingsService sharedInstance];
     uint16_t titleHeight = [settings heightDefined] ? [settings height] : [settings defaultHeight];
 
@@ -889,11 +856,11 @@ static XCBConnection *sharedInstance;
     [request setXPosition:[window windowRect].position.x];
     [request setYPosition:[window windowRect].position.y];
     [request setWidth:[window windowRect].size.width + 1];
-    [request setHeight:[window windowRect].size.height + titleHeight];
-    [request setBorderWidth:3];
+    [request setHeight:[window windowRect].size.height + titleHeight + RESIZE_BAR_HEIGHT];
+    [request setBorderWidth:0];
     [request setXcbClass:XCB_WINDOW_CLASS_INPUT_OUTPUT];
     [request setVisual:visual];
-    [request setValueMask:XCB_CW_BACK_PIXEL /*| XCB_CW_BACKING_STORE*/ | XCB_CW_EVENT_MASK];
+    [request setValueMask:XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK];
     [request setValueList:values];
     [request setClientWindow:window];
 
@@ -912,8 +879,6 @@ static XCBConnection *sharedInstance;
                                    withData:atomProtocols];
 
     [ewmhService updateNetFrameExtentsForWindow:frame];
-    /*[self mapWindow:frame];
-    [self registerWindow:window];*/
 
     NSLog(@"Client window decorated with id %u", [window window]);
     [frame decorateClientWindow];
@@ -1122,6 +1087,22 @@ static XCBConnection *sharedInstance;
 
     window = nil;
 
+}
+
+- (void)handleCreateNotify:(xcb_create_notify_event_t *)anEvent
+{
+}
+
+- (void)handleKeyPress:(xcb_key_press_event_t *)anEvent
+{
+}
+
+- (void)handleKeyRelease:(xcb_key_release_event_t *)anEvent
+{
+}
+
+- (void)handleCirculateRequest:(xcb_circulate_request_event_t *)anEvent
+{
 }
 
 - (void)handleMotionNotify:(xcb_motion_notify_event_t *)anEvent
@@ -1357,13 +1338,13 @@ static XCBConnection *sharedInstance;
     [frame stackAbove];
     
     // Ensure desktop stays at bottom after stacking operations
-    EWMHService *tempEwmhService = [EWMHService sharedInstanceWithConnection:self];
+    EWMHService *EwmhService = [EWMHService sharedInstanceWithConnection:self];
     XCBWindow *desktop = [self findDesktopWindow];
     if (desktop)
     {
         [desktop stackAtBottom];
     }
-    tempEwmhService = nil;
+    EwmhService = nil;
 
     titleBar = (XCBTitleBar *) [frame childWindowForKey:TitleBar];
     [titleBar setIsAbove:YES];
@@ -1443,19 +1424,12 @@ static XCBConnection *sharedInstance;
 
 - (void)handleFocusOut:(xcb_focus_out_event_t *)anEvent
 {
-    XCBWindow *window = [self windowForXCBId:anEvent->event];
-
     NSLog(@"Focus Out event for window: %u", anEvent->event);
-
-    window = nil;
 }
 
 - (void)handleFocusIn:(xcb_focus_in_event_t *)anEvent
 {
     XCBWindow *window = [self windowForXCBId:anEvent->event];
-
-    NSLog(@"Focus In event for window: %u, mode: %d, detail: %d", 
-          anEvent->event, anEvent->mode, anEvent->detail);
 
     if (anEvent->mode == XCB_NOTIFY_MODE_GRAB || anEvent->mode == XCB_NOTIFY_MODE_UNGRAB)
         return;
@@ -1466,32 +1440,8 @@ static XCBConnection *sharedInstance;
         case XCB_NOTIFY_DETAIL_INFERIOR:
         case XCB_NOTIFY_DETAIL_NONLINEAR_VIRTUAL:
         case XCB_NOTIFY_DETAIL_NONLINEAR:
-        {
-            // Only call focus() for GNUstep apps to update menus
-            // For X11 apps, just update _NET_ACTIVE_WINDOW without calling xcb_set_input_focus again
-            NSArray *wmClass = [window windowClass];
-            BOOL isGNUstepApp = NO;
-            
-            if (wmClass && [wmClass count] >= 2)
-            {
-                NSString *className = [wmClass objectAtIndex:1];
-                isGNUstepApp = [className isEqualToString:@"GNUstep"];
-            }
-            
-            if (isGNUstepApp)
-            {
-                NSLog(@"  -> GNUstep app, calling focus() for menu update");
-                [window focus];
-            }
-            else
-            {
-                NSLog(@"  -> X11 app, just updating _NET_ACTIVE_WINDOW");
-                EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
-                [ewmhService updateNetActiveWindow:window];
-                ewmhService = nil;
-            }
+            [window focus];
             break;
-        }
         default:
             break;
     }
@@ -1502,8 +1452,7 @@ static XCBConnection *sharedInstance;
 - (void) handlePropertyNotify:(xcb_property_notify_event_t*)anEvent
 {
     XCBAtomService *atomService = [XCBAtomService sharedInstanceWithConnection:self];
-    ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:self];
-    
+
     NSString *name = [atomService atomNameFromAtom:anEvent->atom];
     NSLog(@"Property changed for window: %u, with name: %@", anEvent->window, name);
 
@@ -1738,37 +1687,10 @@ static XCBConnection *sharedInstance;
 - (void)handleLeaveNotify:(xcb_leave_notify_event_t *)anEvent
 {
     NSLog(@"Leave notify for window: %u", anEvent->event);
-    /*XCBWindow *window = [self windowForXCBId:anEvent->event];
-    [window description];
-
-    window = nil;*/
-
 }
 
 - (void)handleVisibilityEvent:(xcb_visibility_notify_event_t *)anEvent
 {
-    /*XCBWindow *window = [self windowForXCBId:anEvent->window];
-    XCBFrame *frame;
-    XCBWindow *clientWindow;
-    XCBTitleBar* titleBar;*/
-
-    /*if ([window isKindOfClass:[XCBFrame class]])
-    {
-        frame = (XCBFrame *) window;
-        clientWindow = [frame childWindowForKey:ClientWindow];
-    }*/
-
-    /*if (anEvent->state == XCB_VISIBILITY_UNOBSCURED &&
-        anEvent->window == [frame window] &&
-        [frame isAbove])
-    {
-        if ([clientWindow pixmap] == 0)
-            [clientWindow createPixmap];
-    }*/
-
-    /*window = nil;
-    clientWindow = nil;
-    titleBar = nil;*/
 }
 
 - (void)handleExpose:(xcb_expose_event_t *)anEvent
@@ -1776,23 +1698,18 @@ static XCBConnection *sharedInstance;
     XCBWindow *window = [self windowForXCBId:anEvent->window];
     [window onScreen];
     XCBTitleBar *titleBar;
-    XCBFrame *frame; //??
+    XCBFrame *frame;
     XCBRect area;
     XCBPoint position;
     XCBSize size;
 
-    //NSLog(@"EXPOSE EVENT FOR WINDOW: %u of kind: %@", [window window], NSStringFromClass([window class]));
-
-    /*if ([window isKindOfClass:[XCBWindow class]] && [[window parentWindow] isKindOfClass:[XCBFrame class]])
-    {
-        //TODO: frame needs a pixmap too.
-        NSLog(@"EXPOSE EVENT FOR WINDOW: %u of kind: %@", [window window], NSStringFromClass([window class]));
-        frame = (XCBFrame*)window;
-        position = XCBMakePoint(anEvent->x, anEvent->y);
-        size = XCBMakeSize(anEvent->width, anEvent->height);
-        area = XCBMakeRect(position, size);
-        [window drawArea:area];
-    }*/
+    if ([window isKindOfClass:[XCBFrame class]]) {
+        frame = (XCBFrame *)window;
+        
+        if (anEvent->y + anEvent->height >= [frame windowRect].size.height - RESIZE_BAR_HEIGHT) {
+            [XCBRenderingEngine renderFrame:frame];
+        }
+    }
 
     if ([window isMaximizeButton])
     {
@@ -1823,14 +1740,11 @@ static XCBConnection *sharedInstance;
 
     if ([window isKindOfClass:[XCBTitleBar class]])
     {
-        //NSLog(@"EXPOSE EVENT FOR WINDOW: %u of kind: %@", [window window], NSStringFromClass([window class]));
         titleBar = (XCBTitleBar *) window;
         frame = (XCBFrame*)[titleBar parentWindow];
 
         if (!resizeState)
         {
-            /*[titleBar drawTitleBarComponents[[titleBar parentWindow] isAbove] ? TitleBarUpColor
-                                                                                       : TitleBarDownColor];*/
             position = XCBMakePoint(anEvent->x, anEvent->y);
             size = XCBMakeSize(anEvent->width, anEvent->height);
             area = XCBMakeRect(position, size);
@@ -1838,26 +1752,11 @@ static XCBConnection *sharedInstance;
         }
         else if (resizeState && anEvent->count == 0)
         {
-            /*xcb_copy_area(connection,
-                          [titleBar pixmap],
-                          [titleBar window],
-                          [titleBar graphicContextId],
-                          0,
-                          0,
-                          anEvent->x,
-                          anEvent->y,
-                          anEvent->width,
-                          anEvent->height);*/
-            //[titleBar setTitleIsSet:NO];
-            //[titleBar setWindowTitle:[titleBar windowTitle]];
-            /* [titleBar drawArcsForColor:[[titleBar parentWindow] isAbove] ? TitleBarUpColor
-                                                                         : TitleBarDownColor];*/
             position = XCBMakePoint(anEvent->x, anEvent->y);
             size = XCBMakeSize(anEvent->width, anEvent->height);
             area = XCBMakeRect(position, size);
             [titleBar drawArea:area];
         }
-
     }
 
     window = nil;
@@ -1883,13 +1782,6 @@ static XCBConnection *sharedInstance;
 
 - (void)handleDestroyNotify:(xcb_destroy_notify_event_t *)anEvent
 {
-    /* case to handle:
-     * the window is a client window: get the frame
-     * the window is a title bar child button window: get the frame from the title bar
-     * after getting the frame:
-     * unregister title bar, title bar children and client window.
-     */
-
     XCBWindow *window = [self windowForXCBId:anEvent->window];
     XCBFrame *frameWindow = nil;
     XCBTitleBar *titleBarWindow = nil;
@@ -1904,18 +1796,18 @@ static XCBConnection *sharedInstance;
 
     if ([window isKindOfClass:[XCBWindow class]])
     {
-        if ([[window parentWindow] isKindOfClass:[XCBFrame class]]) /* then is the client window */
+        if ([[window parentWindow] isKindOfClass:[XCBFrame class]])
         {
             frameWindow = (XCBFrame *) [window parentWindow];
             clientWindow = window;
             titleBarWindow = (XCBTitleBar *) [frameWindow childWindowForKey:TitleBar];
-            [frameWindow setNeedDestroy:YES]; /* at this point maybe i can avoid to force this to YES */
+            [frameWindow setNeedDestroy:YES];
         }
 
-        if ([[window parentWindow] isKindOfClass:[XCBTitleBar class]]) /* then is the client window */
+        if ([[window parentWindow] isKindOfClass:[XCBTitleBar class]])
         {
             frameWindow = (XCBFrame *) [[window parentWindow] parentWindow];
-            [frameWindow setNeedDestroy:YES]; /* at this point maybe i can avoid to force this to YES */
+            [frameWindow setNeedDestroy:YES];
             titleBarWindow = (XCBTitleBar *) [frameWindow childWindowForKey:TitleBar];
             clientWindow = [frameWindow childWindowForKey:ClientWindow];
         }
@@ -1960,7 +1852,7 @@ static XCBConnection *sharedInstance;
     }
 
     if (frameWindow != nil &&
-        [frameWindow needDestroy]) /*evaluete if the check on destroy window is necessary or not */
+        [frameWindow needDestroy])
     {
         titleBarWindow = (XCBTitleBar *) [frameWindow childWindowForKey:TitleBar];
         [self unregisterWindow:[titleBarWindow hideWindowButton]];
@@ -2002,10 +1894,8 @@ static XCBConnection *sharedInstance;
 {
     int rightBorder = [aFrame windowRect].size.width;
     int bottomBorder = [aFrame windowRect].size.height;
-    int leftBorder = [aFrame windowRect].position.x;
-    int topBorder = [aFrame windowRect].position.y;
 
-    if (rightBorder == anEvent->event_x || (rightBorder - 1) < anEvent->event_x)
+    if (anEvent->event_y >= bottomBorder - RESIZE_BAR_HEIGHT)
     {
         if (![aFrame grabPointer])
         {
@@ -2015,66 +1905,17 @@ static XCBConnection *sharedInstance;
 
         resizeState = YES;
         dragState = NO;
-        [aFrame setRightBorderClicked:YES];
-    }
-
-    if (bottomBorder == anEvent->event_y || (bottomBorder - 1) < anEvent->event_y)
-    {
-        if (![aFrame grabPointer])
+        
+        if (anEvent->event_x >= rightBorder - 20)
         {
-            NSLog(@"Unable to grab the pointer");
-            return;
+            [aFrame setBottomBorderClicked:YES];
+            [aFrame setRightBorderClicked:YES];
         }
-
-        resizeState = YES;
-        dragState = NO;
-        [aFrame setBottomBorderClicked:YES];
-
-    }
-
-    if ((bottomBorder == anEvent->event_y || (bottomBorder - 1) < anEvent->event_y) &&
-        (rightBorder == anEvent->event_x || (rightBorder - 1) < anEvent->event_x))
-    {
-        if (![aFrame grabPointer])
+        else
         {
-            NSLog(@"Unable to grab the pointer");
-            return;
+            [aFrame setBottomBorderClicked:YES];
         }
-
-        resizeState = YES;
-        dragState = NO;
-        [aFrame setBottomBorderClicked:YES];
-        [aFrame setRightBorderClicked:YES];
     }
-
-    if (leftBorder == anEvent->root_x || (leftBorder + 3) > anEvent->root_x)
-    {
-        if (![aFrame grabPointer])
-        {
-            NSLog(@"Unable to grab the pointer");
-            return;
-        }
-
-        resizeState = YES;
-        dragState = NO;
-
-        [aFrame setLeftBorderClicked:YES];
-    }
-
-    if (topBorder == anEvent->root_y)
-    {
-        if (![aFrame grabPointer])
-        {
-            NSLog(@"Unable to grab the pointer");
-            return;
-        }
-
-        resizeState = YES;
-        dragState = NO;
-
-        [aFrame setTopBorderClicked:YES];
-    }
-
 }
 
 - (void)drawAllTitleBarsExcept:(XCBTitleBar *)aTitileBar
@@ -2092,7 +1933,7 @@ static XCBConnection *sharedInstance;
 
             if (titleBar != aTitileBar)
             {
-		XCBFrame *frame = (XCBFrame *) [titleBar parentWindow];
+                XCBFrame *frame = (XCBFrame *) [titleBar parentWindow];
                 XCBWindow *clientWindow = [frame childWindowForKey:ClientWindow];
 
                 if ([clientWindow alwaysOnTop])
@@ -2174,8 +2015,6 @@ static XCBConnection *sharedInstance;
 {
     xcb_send_event(connection, propagating, [aWindow window], XCB_EVENT_MASK_STRUCTURE_NOTIFY, anEvent);
 }
-
-//TODO: tenere traccia del tempo per ogni evento.
 
 - (xcb_timestamp_t)currentTime
 {
@@ -2273,16 +2112,7 @@ static XCBConnection *sharedInstance;
 
 - (void)dealloc
 {
-    [screens removeAllObjects];
-    screens = nil;
-    [windowsMap removeAllObjects];
-    windowsMap = nil;
-    displayName = nil;
-    damagedRegions = nil;
-
     xcb_disconnect(connection);
-    icccmService = nil;
 }
-
 
 @end

@@ -108,8 +108,6 @@
 - (void) handleFocusOut: (xcb_focus_out_event_t*)anEvent;
 - (void) handleFocusIn: (xcb_focus_in_event_t*)anEvent;
 - (void) handleVisibilityEvent: (xcb_visibility_notify_event_t*)anEvent;
-- (void) restackAllWindowsAboveDesktop:(XCBWindow *)desktopWindow;
-- (XCBWindow *)findDesktopWindow;
 
 /*** SENDS EVENTS ***/
 
@@ -124,6 +122,8 @@
 - (void) borderClickedForFrameWindow:(XCBFrame*)aFrame withEvent:(xcb_button_press_event_t*)anEvent;
 - (void)drawAllTitleBarsExcept:(XCBTitleBar *)aTitileBar;
 - (BOOL) registerAsWindowManager:(BOOL)replace screenId:(uint32_t)screenId selectionWindow:(XCBWindow*)selectionWindow;
+- (void) restackAllWindowsAboveDesktop:(XCBWindow *)desktopWindow;
+- (XCBWindow *)findDesktopWindow;
 
 /*** ACCESSORS ***/
 

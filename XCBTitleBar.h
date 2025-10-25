@@ -40,6 +40,7 @@ XCB_EVENT_MASK_KEY_PRESS
 @property (nonatomic, assign) XCBColor titleBarDownColor;
 @property (strong, nonatomic) EWMHService *ewmhService;
 @property (nonatomic, assign) BOOL titleIsSet;
+@property (nonatomic, assign) BOOL isRendered;  // ADD THIS LINE
 
 - (id) initWithFrame:(XCBFrame*) aFrame withConnection:(XCBConnection*) aConnection;
 - (void) drawArcsForColor:(TitleBarColor)aColor;
@@ -55,6 +56,7 @@ XCB_EVENT_MASK_KEY_PRESS
 - (void) generateButtons;
 - (void) setButtonsAbove:(BOOL)aValue;
 - (void) putButtonsBackgroundPixmaps:(BOOL)aValue;
+- (void) drawTextToPixmaps:(NSString*)title;
 
 /****************
  *    ACCESORS  *

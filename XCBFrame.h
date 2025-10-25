@@ -18,7 +18,8 @@
 typedef NS_ENUM(NSInteger, childrenMask)
 {
     TitleBar = 0,
-    ClientWindow = 1
+    ClientWindow = 1,
+    ResizeBar = 2
 };
 
 @interface XCBFrame : XCBWindow

@@ -23,21 +23,28 @@
 @property (strong, nonatomic) XCBVisual *visual;
 @property (nonatomic) CGFloat height;
 @property (nonatomic) CGFloat width;
-@property (nonatomic) BOOL alreadyScaled; //could be useful only for tests
+@property (nonatomic) BOOL alreadyScaled;
 
 - (id) initWithConnection:(XCBConnection*) aConnection;
 - (id) initWithConnection:(XCBConnection *)aConnection window:(XCBWindow*) aWindow visual:(XCBVisual*) aVisual;
 - (id) initWithConnection:(XCBConnection *)aConnection window:(XCBWindow*) aWindow;
-- (void) drawTitleBarButtonWithColor:(XCBColor) buttonColor withStopColor:(XCBColor) stopColor;
-- (void) drawTitleBarWithColor:(XCBColor) titleColor andStopColor:(XCBColor) stopColor;
-- (void) drawWindowWithColor:(XCBColor)aColor andStopColor:(XCBColor)stopColor;
-- (void) drawText:(NSString*) aText withColor:(XCBColor) aColor;
+
+// Preview/miniaturize functionality
 - (void) makePreviewImage;
-- (void) saveContext;
-- (void) restoreContext;
 - (void) setPreviewImage;
-- (void) putImage:(NSString*)aPath forDPixmap:(BOOL)aValue;
-- (void) drawContent;
+
+// Icon processing
 - (cairo_surface_t*) drawContentFromData:(uint32_t *)data withWidht:(int)aWidth andHeight:(int)aHeight;
 - (void) drawIconFromSurface:(cairo_surface_t*)aSurface;
+
+// Image loading (for custom button images if needed)
+- (void) putImage:(NSString*)aPath forDPixmap:(BOOL)aValue;
+
+// Debug/development helpers
+- (void) drawContent;
+
+// Context management
+- (void) saveContext;
+- (void) restoreContext;
+
 @end

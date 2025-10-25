@@ -698,7 +698,6 @@
 - (void)createMiniWindowAtPosition:(XCBPoint)position
 {
     oldRect = windowRect;
-    XCBTitleBar *titleBar;
 
     XCBSize newSize = XCBMakeSize(50, 50); //misure di prova
     XCBRect newRect = XCBMakeRect(position, newSize);
@@ -740,7 +739,6 @@
 
     atomService = nil;
     ewmhService = nil;
-    titleBar = nil;
 
     return;
 }
@@ -952,12 +950,11 @@
     XCBAtomService *atomService = [XCBAtomService sharedInstanceWithConnection:connection];
     ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:connection];
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:connection];
-
+    
     if (hasInputHint)
         [self setInputFocus:XCB_INPUT_FOCUS_POINTER_ROOT time:[connection currentTime]];
-
+    
     /*** check for the WMTakeFocus protocol ***/
-
     if ([icccmService hasProtocol:[icccmService WMTakeFocus] forWindow:self])
     {
         event.type = [atomService atomFromCachedAtomsWithKey:[icccmService WMProtocols]];
@@ -969,12 +966,9 @@
         event.data.data32[2] = 0;
         event.data.data32[3] = 0;
         event.sequence = 0;
-
         [connection sendEvent:(const char*) &event toClient:self propagate:NO];
     }
-
     [ewmhService updateNetActiveWindow:self];
-
     atomService = nil;
     icccmService = nil;
     ewmhService = nil;
@@ -1032,7 +1026,7 @@
 - (void) refreshBorder
 {
     NSLog(@"Refreshing borders");
-    uint32_t values[] = {3};
+    uint32_t values[] = {0};
     xcb_configure_window([connection connection], window, XCB_CONFIG_WINDOW_BORDER_WIDTH, values);
 }
 
