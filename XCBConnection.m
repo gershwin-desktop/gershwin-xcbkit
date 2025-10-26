@@ -1369,41 +1369,12 @@ static XCBConnection *sharedInstance;
         clientWindow = [frame childWindowForKey:ClientWindow];
     }
 
-    // Check if this window is already focused - avoid unnecessary work
-    EWMHService *checkEwmhService = [EWMHService sharedInstanceWithConnection:self];
-    XCBScreen *scr = [clientWindow onScreen];
-    XCBWindow *rootWindow = [scr rootWindow];
-    xcb_get_property_reply_t *activeReply = [checkEwmhService getProperty:[checkEwmhService EWMHActiveWindow]
-                                                              propertyType:XCB_ATOM_WINDOW
-                                                                 forWindow:rootWindow
-                                                                    delete:NO
-                                                                    length:1];
+    // Always ungrab and focus when clicked - no "already active" optimization
+    NSLog(@"[ButtonPress] Ungrabbing keyboard at time %u for window %u", anEvent->time, [clientWindow window]);
+    xcb_ungrab_keyboard(connection, anEvent->time);
     
-    BOOL alreadyActive = NO;
-    if (activeReply && activeReply->length > 0)
-    {
-        xcb_window_t *activeWin = xcb_get_property_value(activeReply);
-        if (*activeWin == [clientWindow window])
-        {
-            alreadyActive = YES;
-            NSLog(@"[ButtonPress] Window %u already active, skipping focus change", [clientWindow window]);
-        }
-        free(activeReply);
-    }
-    checkEwmhService = nil;
-    scr = nil;
-    rootWindow = nil;
-    
-    // Only do focus work if window is not already active
-    if (!alreadyActive)
-    {
-        // Ungrab keyboard with event timestamp instead of CURRENT_TIME
-        NSLog(@"[ButtonPress] Ungrabbing keyboard at time %u", anEvent->time);
-        xcb_ungrab_keyboard(connection, anEvent->time);
-        
-        [clientWindow focus];
-        [frame stackAbove];
-    }
+    [clientWindow focus];
+    [frame stackAbove];
     
     // Ensure desktop stays at bottom after stacking operations
     EWMHService *EwmhService = [EWMHService sharedInstanceWithConnection:self];
@@ -1594,7 +1565,65 @@ static XCBConnection *sharedInstance;
     ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:self];
     NSString *atomMessageName = [atomService atomNameFromAtom:anEvent->type];
 
-    NSLog(@"Atom name: %@, for atom id: %u", atomMessageName, anEvent->type);
+    NSLog(@"[ClientMessage] Atom name: %@, for atom id: %u, window: %u", atomMessageName, anEvent->type, anEvent->window);
+
+    // Handle _NET_ACTIVE_WINDOW with source discrimination
+    if ([atomMessageName isEqualToString:@"_NET_ACTIVE_WINDOW"])
+    {
+        // EWMH spec: data.data32[0] is source indicator:
+        // 0 = unspecified (old clients)
+        // 1 = application itself
+        // 2 = pager/taskbar (user action)
+        uint32_t source = anEvent->data.data32[0];
+        
+        NSLog(@"[ClientMessage] _NET_ACTIVE_WINDOW request for window %u, source=%u", anEvent->window, source);
+        
+        if (source == 1) {
+            // Application requesting focus for itself - ignore
+            NSLog(@"[ClientMessage] Blocking self-initiated focus request from application %u", anEvent->window);
+            atomService = nil;
+            ewmhService = nil;
+            icccmService = nil;
+            return;
+        }
+        
+        // source == 0 (old client) or source == 2 (pager/dock) - allow it
+        NSLog(@"[ClientMessage] Allowing focus request from pager/dock for window %u", anEvent->window);
+        
+        XCBWindow *window = [self windowForXCBId:anEvent->window];
+        if (window && [window isKindOfClass:[XCBWindow class]])
+        {
+            // If it's a client window with a frame, focus it properly
+            if ([[window parentWindow] isKindOfClass:[XCBFrame class]])
+            {
+                XCBFrame *frame = (XCBFrame *)[window parentWindow];
+                XCBTitleBar *titleBar = (XCBTitleBar *)[frame childWindowForKey:TitleBar];
+                
+                NSLog(@"[ClientMessage] Focusing window %u from dock click", [window window]);
+                
+                [frame stackAbove];
+                [window focus];
+                
+                if (titleBar)
+                {
+                    [titleBar setIsAbove:YES];
+                    [titleBar setButtonsAbove:YES];
+                    [titleBar drawTitleBarComponents];
+                    [self drawAllTitleBarsExcept:titleBar];
+                }
+            }
+            else
+            {
+                // Window without frame, just focus it
+                [window focus];
+            }
+        }
+        
+        atomService = nil;
+        ewmhService = nil;
+        icccmService = nil;
+        return;
+    }
 
     XCBWindow *window;
     XCBTitleBar *titleBar;

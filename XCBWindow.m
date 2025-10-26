@@ -953,25 +953,9 @@
     
     BOOL hasTakeFocus = [icccmService hasProtocol:[icccmService WMTakeFocus] forWindow:self];
     
-    // Determine input model and set focus accordingly (ICCCM 4.1.7)
-    if (hasInputHint && !hasTakeFocus) {
-        // Passive model - just set input focus
-        [self setInputFocus:XCB_INPUT_FOCUS_POINTER_ROOT time:[connection currentTime]];
-        NSLog(@"[Focus] Passive model: Set input focus on window %u", window);
-    } else if (hasInputHint && hasTakeFocus) {
-        // Locally Active - set focus AND send WM_TAKE_FOCUS
-        [self setInputFocus:XCB_INPUT_FOCUS_POINTER_ROOT time:[connection currentTime]];
-        NSLog(@"[Focus] Locally Active: Set input focus on window %u and will send WM_TAKE_FOCUS", window);
-    } else if (!hasInputHint && hasTakeFocus) {
-        // Globally Active - DON'T set focus, only send WM_TAKE_FOCUS
-        // The application will set focus itself when it receives WM_TAKE_FOCUS
-        NSLog(@"[Focus] Globally Active: Window %u will handle focus itself via WM_TAKE_FOCUS", window);
-    } else {
-        // No Input model (!hasInputHint && !hasTakeFocus) - window doesn't want input
-        // But set focus anyway as a fallback for broken apps
-        [self setInputFocus:XCB_INPUT_FOCUS_POINTER_ROOT time:[connection currentTime]];
-        NSLog(@"[Focus] No Input model: Set input focus on window %u (fallback)", window);
-    }
+    // Always set input focus - many apps don't handle the protocols correctly
+    [self setInputFocus:XCB_INPUT_FOCUS_POINTER_ROOT time:[connection currentTime]];
+    NSLog(@"[Focus] Set input focus on window %u", window);
     
     // Send WM_TAKE_FOCUS if the protocol is supported
     if (hasTakeFocus)
@@ -995,6 +979,7 @@
     icccmService = nil;
     ewmhService = nil;
 }
+
 
 - (XCBGeometryReply *)geometries
 {
