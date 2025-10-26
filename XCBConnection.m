@@ -1289,6 +1289,9 @@ static XCBConnection *sharedInstance;
         {
             [frame restoreDimensionAndPosition];
 
+            [titleBar drawTitleBarComponentsPixmaps];
+            [titleBar putWindowBackgroundWithPixmap:[titleBar isAbove] ? [titleBar pixmap] : [titleBar dPixmap]];
+
             clientWindow = nil;
             titleBar = nil;
             frame = nil;
@@ -1311,6 +1314,9 @@ static XCBConnection *sharedInstance;
         [titleBar maximizeToSize:size andPosition:position];
         [titleBar drawTitleBarComponents];
         [titleBar setFullScreen:YES];
+
+        [titleBar drawTitleBarComponentsPixmaps];
+        [titleBar putWindowBackgroundWithPixmap:[titleBar isAbove] ? [titleBar pixmap] : [titleBar dPixmap]];
 
         /***client window **/
         size = XCBMakeSize([frame windowRect].size.width, [frame windowRect].size.height - titleHgt);
