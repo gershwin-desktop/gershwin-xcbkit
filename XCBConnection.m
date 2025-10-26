@@ -577,7 +577,8 @@ static XCBConnection *sharedInstance;
                                 [self drawAllTitleBarsExcept:groupedTitleBar];
                             }
                             
-                            [groupedWindow focus];
+                            // DON'T call focus here - let user click determine focus
+                            NSLog(@"[MapRequest] Restored window %u, NOT auto-focusing", [groupedWindow window]);
                         }
                     }
                 }
@@ -601,7 +602,7 @@ static XCBConnection *sharedInstance;
                     [frame setNormalState];
                     [window setNormalState];
                     
-                    // Bring to front and focus
+                    // Bring to front but DON'T focus
                     [frame stackAbove];
                     
                     if (titleBar)
@@ -611,7 +612,8 @@ static XCBConnection *sharedInstance;
                         [self drawAllTitleBarsExcept:titleBar];
                     }
                     
-                    [window focus];
+                    // DON'T call focus here - let user click determine focus
+                    NSLog(@"[MapRequest] Restored window %u, NOT auto-focusing", [window window]);
                 }
                 
                 NSLog(@"[MapRequest] Restoration complete");
@@ -619,6 +621,7 @@ static XCBConnection *sharedInstance;
             else
             {
                 // Normal map for non-minimized window
+                NSLog(@"[MapRequest] Normal map for already-managed window %u", [window window]);
                 [self mapWindow:frame];
                 
                 if (titleBar)
@@ -922,6 +925,10 @@ static XCBConnection *sharedInstance;
     [self drawAllTitleBarsExcept:(XCBTitleBar*)[frame childWindowForKey:TitleBar]];
     [icccmService wmClassForWindow:window];
     [frame configureClient];
+
+    // DON'T auto-focus newly mapped windows - let user click determine focus
+    // This prevents focus fights when apps open multiple windows at startup
+    NSLog(@"[MapRequest] New window %u mapped, NOT auto-focusing", [window window]);
 
     [self setNeedFlush:YES];
     window = nil;
@@ -1360,15 +1367,43 @@ static XCBConnection *sharedInstance;
         xcb_allow_events(connection, XCB_ALLOW_REPLAY_POINTER, anEvent->time);
         frame = (XCBFrame *) [window parentWindow];
         clientWindow = [frame childWindowForKey:ClientWindow];
-        ewmhService = [EWMHService sharedInstanceWithConnection:self];
-        [ewmhService updateNetActiveWindow:window];
-        ewmhService = nil;
-
     }
 
-    xcb_ungrab_keyboard(connection, XCB_CURRENT_TIME);
-    [clientWindow focus];
-    [frame stackAbove];
+    // Check if this window is already focused - avoid unnecessary work
+    EWMHService *checkEwmhService = [EWMHService sharedInstanceWithConnection:self];
+    XCBScreen *scr = [clientWindow onScreen];
+    XCBWindow *rootWindow = [scr rootWindow];
+    xcb_get_property_reply_t *activeReply = [checkEwmhService getProperty:[checkEwmhService EWMHActiveWindow]
+                                                              propertyType:XCB_ATOM_WINDOW
+                                                                 forWindow:rootWindow
+                                                                    delete:NO
+                                                                    length:1];
+    
+    BOOL alreadyActive = NO;
+    if (activeReply && activeReply->length > 0)
+    {
+        xcb_window_t *activeWin = xcb_get_property_value(activeReply);
+        if (*activeWin == [clientWindow window])
+        {
+            alreadyActive = YES;
+            NSLog(@"[ButtonPress] Window %u already active, skipping focus change", [clientWindow window]);
+        }
+        free(activeReply);
+    }
+    checkEwmhService = nil;
+    scr = nil;
+    rootWindow = nil;
+    
+    // Only do focus work if window is not already active
+    if (!alreadyActive)
+    {
+        // Ungrab keyboard with event timestamp instead of CURRENT_TIME
+        NSLog(@"[ButtonPress] Ungrabbing keyboard at time %u", anEvent->time);
+        xcb_ungrab_keyboard(connection, anEvent->time);
+        
+        [clientWindow focus];
+        [frame stackAbove];
+    }
     
     // Ensure desktop stays at bottom after stacking operations
     EWMHService *EwmhService = [EWMHService sharedInstanceWithConnection:self];
@@ -1457,23 +1492,61 @@ static XCBConnection *sharedInstance;
 
 - (void)handleFocusOut:(xcb_focus_out_event_t *)anEvent
 {
-    NSLog(@"Focus Out event for window: %u", anEvent->event);
+    // Just log, don't do anything else
+    // FocusOut is informational only
+    NSLog(@"[FocusOut] Window %u lost focus, mode=%d, detail=%d", 
+          anEvent->event, anEvent->mode, anEvent->detail);
 }
 
 - (void)handleFocusIn:(xcb_focus_in_event_t *)anEvent
 {
     XCBWindow *window = [self windowForXCBId:anEvent->event];
 
-    if (anEvent->mode == XCB_NOTIFY_MODE_GRAB || anEvent->mode == XCB_NOTIFY_MODE_UNGRAB)
-        return;
+    NSLog(@"[FocusIn] Window %u received FocusIn, mode=%d, detail=%d", 
+          anEvent->event, anEvent->mode, anEvent->detail);
 
+    if (anEvent->mode == XCB_NOTIFY_MODE_GRAB || anEvent->mode == XCB_NOTIFY_MODE_UNGRAB)
+    {
+        NSLog(@"[FocusIn] Ignoring grab/ungrab focus event");
+        return;
+    }
+
+    // DON'T call focus() here - that creates a feedback loop!
+    // FocusIn is a notification that focus has ALREADY been set by someone else
+    // Just update internal state if needed
+    
     switch (anEvent->detail)
     {
         case XCB_NOTIFY_DETAIL_ANCESTOR:
         case XCB_NOTIFY_DETAIL_INFERIOR:
         case XCB_NOTIFY_DETAIL_NONLINEAR_VIRTUAL:
         case XCB_NOTIFY_DETAIL_NONLINEAR:
-            [window focus];
+            NSLog(@"[FocusIn] Window %u has focus, updating internal state only", anEvent->event);
+            
+            // Update _NET_ACTIVE_WINDOW to reflect reality, but DON'T call focus()
+            if (window && [window isKindOfClass:[XCBWindow class]] && 
+                [[window parentWindow] isKindOfClass:[XCBFrame class]])
+            {
+                XCBFrame *frame = (XCBFrame *)[window parentWindow];
+                XCBWindow *clientWindow = [frame childWindowForKey:ClientWindow];
+                
+                if (clientWindow)
+                {
+                    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+                    [ewmhService updateNetActiveWindow:clientWindow];
+                    
+                    // Update titlebar appearance
+                    XCBTitleBar *titleBar = (XCBTitleBar *)[frame childWindowForKey:TitleBar];
+                    if (titleBar)
+                    {
+                        [titleBar setIsAbove:YES];
+                        [titleBar drawTitleBarComponents];
+                        [self drawAllTitleBarsExcept:titleBar];
+                    }
+                    
+                    ewmhService = nil;
+                }
+            }
             break;
         default:
             break;

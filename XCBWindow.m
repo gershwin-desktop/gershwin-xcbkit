@@ -951,24 +951,46 @@
     ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:connection];
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:connection];
     
-    if (hasInputHint)
-        [self setInputFocus:XCB_INPUT_FOCUS_POINTER_ROOT time:[connection currentTime]];
+    BOOL hasTakeFocus = [icccmService hasProtocol:[icccmService WMTakeFocus] forWindow:self];
     
-    /*** check for the WMTakeFocus protocol ***/
-    if ([icccmService hasProtocol:[icccmService WMTakeFocus] forWindow:self])
+    // Determine input model and set focus accordingly (ICCCM 4.1.7)
+    if (hasInputHint && !hasTakeFocus) {
+        // Passive model - just set input focus
+        [self setInputFocus:XCB_INPUT_FOCUS_POINTER_ROOT time:[connection currentTime]];
+        NSLog(@"[Focus] Passive model: Set input focus on window %u", window);
+    } else if (hasInputHint && hasTakeFocus) {
+        // Locally Active - set focus AND send WM_TAKE_FOCUS
+        [self setInputFocus:XCB_INPUT_FOCUS_POINTER_ROOT time:[connection currentTime]];
+        NSLog(@"[Focus] Locally Active: Set input focus on window %u and will send WM_TAKE_FOCUS", window);
+    } else if (!hasInputHint && hasTakeFocus) {
+        // Globally Active - DON'T set focus, only send WM_TAKE_FOCUS
+        // The application will set focus itself when it receives WM_TAKE_FOCUS
+        NSLog(@"[Focus] Globally Active: Window %u will handle focus itself via WM_TAKE_FOCUS", window);
+    } else {
+        // No Input model (!hasInputHint && !hasTakeFocus) - window doesn't want input
+        // But set focus anyway as a fallback for broken apps
+        [self setInputFocus:XCB_INPUT_FOCUS_POINTER_ROOT time:[connection currentTime]];
+        NSLog(@"[Focus] No Input model: Set input focus on window %u (fallback)", window);
+    }
+    
+    // Send WM_TAKE_FOCUS if the protocol is supported
+    if (hasTakeFocus)
     {
+        NSLog(@"[Focus] Sending WM_TAKE_FOCUS to window %u", window);
         event.type = [atomService atomFromCachedAtomsWithKey:[icccmService WMProtocols]];
         event.format = 32;
         event.response_type = XCB_CLIENT_MESSAGE;
         event.window = window;
         event.data.data32[0] = [atomService atomFromCachedAtomsWithKey:[icccmService WMTakeFocus]];
-        event.data.data32[1] = [connection currentTime]; //FIXME:SET THE TIME OF THE EVENT OR UPDATE LOCALLY THE TIMESTAMP
+        event.data.data32[1] = [connection currentTime];
         event.data.data32[2] = 0;
         event.data.data32[3] = 0;
         event.sequence = 0;
         [connection sendEvent:(const char*) &event toClient:self propagate:NO];
     }
+    
     [ewmhService updateNetActiveWindow:self];
+    
     atomService = nil;
     icccmService = nil;
     ewmhService = nil;
