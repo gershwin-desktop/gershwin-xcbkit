@@ -790,7 +790,7 @@ static XCBConnection *sharedInstance;
                 return;
             }
 
-            atom = NULL; //FIXME:is this malloc'd?
+            atom = NULL;
         }
 
         void *motifHints = [ewmhService getProperty:[ewmhService MotifWMHints]
@@ -815,12 +815,14 @@ static XCBConnection *sharedInstance;
                 [window updateAttributes];
                 [self mapWindow:window];
                 [self registerWindow:window];
+                ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:self];
                 [icccmService wmClassForWindow:window];
 
                 window = nil;
                 ewmhService = nil;
                 geometry = nil;
                 name = nil;
+                icccmService = nil;
                 return;
             }
 
@@ -839,7 +841,26 @@ static XCBConnection *sharedInstance;
         name = nil;
     }
 
-    [window onScreen]; // TODO: Just called in the else before this? really necessary?
+    // *** DETERMINE BORDER WIDTH BASED ON SIZE HINTS ***
+    uint16_t borderWidth = 3; // Default border for resizable windows
+
+    // Check if window has fixed size (min == max in WM_NORMAL_HINTS)
+    xcb_size_hints_t sizeHints;
+    if (xcb_icccm_get_wm_normal_hints_reply([self connection],
+                                             xcb_icccm_get_wm_normal_hints([self connection], [window window]),
+                                             &sizeHints,
+                                             NULL)) {
+        if ((sizeHints.flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE) &&
+            (sizeHints.flags & XCB_ICCCM_SIZE_HINT_P_MAX_SIZE) &&
+            sizeHints.min_width == sizeHints.max_width &&
+            sizeHints.min_height == sizeHints.max_height) {
+            borderWidth = 0;
+            NSLog(@"Fixed-size window %u - no border", [window window]);
+        }
+    }
+    // *** END BORDER WIDTH DETERMINATION ***
+
+    [window onScreen];
     XCBScreen *screen =  [window screen];
     XCBVisual *visual = [[XCBVisual alloc] initWithVisualId:[screen screen]->root_visual];
     [visual setVisualTypeForScreen:screen];
@@ -854,8 +875,8 @@ static XCBConnection *sharedInstance;
     [request setXPosition:[window windowRect].position.x];
     [request setYPosition:[window windowRect].position.y];
     [request setWidth:[window windowRect].size.width + 1];
-    [request setHeight:[window windowRect].size.height + titleHeight +1];
-    [request setBorderWidth:3];
+    [request setHeight:[window windowRect].size.height + titleHeight + 1];
+    [request setBorderWidth:borderWidth];  // Use the variable set above
     [request setXcbClass:XCB_WINDOW_CLASS_INPUT_OUTPUT];
     [request setVisual:visual];
     [request setValueMask:XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK];
@@ -865,11 +886,14 @@ static XCBConnection *sharedInstance;
     XCBWindowTypeResponse *response = [self createWindowForRequest:request registerWindow:YES];
 
     XCBFrame *frame = [response frame];
+    
+    // Set border color to black
     uint32_t borderColor[] = {[screen screen]->black_pixel};
     xcb_change_window_attributes([self connection], 
                                  [frame window], 
                                  XCB_CW_BORDER_PIXEL, 
                                  borderColor);
+    
     ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:self];
     const xcb_atom_t atomProtocols[1] = {[[icccmService atomService] atomFromCachedAtomsWithKey:[icccmService WMDeleteWindow]]};
 
