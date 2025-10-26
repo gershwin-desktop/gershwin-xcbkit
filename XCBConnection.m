@@ -21,8 +21,6 @@
 #import "services/TitleBarSettingsService.h"
 #import "XCBRenderingEngine.h"
 
-#define RESIZE_BAR_HEIGHT 9
-
 @implementation XCBConnection
 
 @synthesize dragState;
@@ -856,8 +854,8 @@ static XCBConnection *sharedInstance;
     [request setXPosition:[window windowRect].position.x];
     [request setYPosition:[window windowRect].position.y];
     [request setWidth:[window windowRect].size.width + 1];
-    [request setHeight:[window windowRect].size.height + titleHeight + RESIZE_BAR_HEIGHT];
-    [request setBorderWidth:0];
+    [request setHeight:[window windowRect].size.height + titleHeight +1];
+    [request setBorderWidth:3];
     [request setXcbClass:XCB_WINDOW_CLASS_INPUT_OUTPUT];
     [request setVisual:visual];
     [request setValueMask:XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK];
@@ -867,6 +865,11 @@ static XCBConnection *sharedInstance;
     XCBWindowTypeResponse *response = [self createWindowForRequest:request registerWindow:YES];
 
     XCBFrame *frame = [response frame];
+    uint32_t borderColor[] = {[screen screen]->black_pixel};
+    xcb_change_window_attributes([self connection], 
+                                 [frame window], 
+                                 XCB_CW_BORDER_PIXEL, 
+                                 borderColor);
     ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:self];
     const xcb_atom_t atomProtocols[1] = {[[icccmService atomService] atomFromCachedAtomsWithKey:[icccmService WMDeleteWindow]]};
 
@@ -1703,14 +1706,6 @@ static XCBConnection *sharedInstance;
     XCBPoint position;
     XCBSize size;
 
-    if ([window isKindOfClass:[XCBFrame class]]) {
-        frame = (XCBFrame *)window;
-        
-        if (anEvent->y + anEvent->height >= [frame windowRect].size.height - RESIZE_BAR_HEIGHT) {
-            [XCBRenderingEngine renderFrame:frame];
-        }
-    }
-
     if ([window isMaximizeButton])
     {
         titleBar = (XCBTitleBar*) [window parentWindow];
@@ -1894,8 +1889,10 @@ static XCBConnection *sharedInstance;
 {
     int rightBorder = [aFrame windowRect].size.width;
     int bottomBorder = [aFrame windowRect].size.height;
+    int leftBorder = [aFrame windowRect].position.x;
+    int topBorder = [aFrame windowRect].position.y;
 
-    if (anEvent->event_y >= bottomBorder - RESIZE_BAR_HEIGHT)
+    if (rightBorder == anEvent->event_x || (rightBorder - 1) < anEvent->event_x)
     {
         if (![aFrame grabPointer])
         {
@@ -1905,17 +1902,66 @@ static XCBConnection *sharedInstance;
 
         resizeState = YES;
         dragState = NO;
-        
-        if (anEvent->event_x >= rightBorder - 20)
-        {
-            [aFrame setBottomBorderClicked:YES];
-            [aFrame setRightBorderClicked:YES];
-        }
-        else
-        {
-            [aFrame setBottomBorderClicked:YES];
-        }
+        [aFrame setRightBorderClicked:YES];
     }
+
+    if (bottomBorder == anEvent->event_y || (bottomBorder - 1) < anEvent->event_y)
+    {
+        if (![aFrame grabPointer])
+        {
+            NSLog(@"Unable to grab the pointer");
+            return;
+        }
+
+        resizeState = YES;
+        dragState = NO;
+        [aFrame setBottomBorderClicked:YES];
+
+    }
+
+    if ((bottomBorder == anEvent->event_y || (bottomBorder - 1) < anEvent->event_y) &&
+        (rightBorder == anEvent->event_x || (rightBorder - 1) < anEvent->event_x))
+    {
+        if (![aFrame grabPointer])
+        {
+            NSLog(@"Unable to grab the pointer");
+            return;
+        }
+
+        resizeState = YES;
+        dragState = NO;
+        [aFrame setBottomBorderClicked:YES];
+        [aFrame setRightBorderClicked:YES];
+    }
+
+    if (leftBorder == anEvent->root_x || (leftBorder + 3) > anEvent->root_x)
+    {
+        if (![aFrame grabPointer])
+        {
+            NSLog(@"Unable to grab the pointer");
+            return;
+        }
+
+        resizeState = YES;
+        dragState = NO;
+
+        [aFrame setLeftBorderClicked:YES];
+    }
+
+    if (topBorder == anEvent->root_y)
+    {
+        if (![aFrame grabPointer])
+        {
+            NSLog(@"Unable to grab the pointer");
+            return;
+        }
+
+        resizeState = YES;
+        dragState = NO;
+
+        [aFrame setTopBorderClicked:YES];
+    }
+
 }
 
 - (void)drawAllTitleBarsExcept:(XCBTitleBar *)aTitileBar

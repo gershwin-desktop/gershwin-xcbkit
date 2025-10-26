@@ -303,39 +303,6 @@ static XCBRenderingEngine *sharedInstance = nil;
     XCBScreen *screen = [frame onScreen];
     XCBVisual *visual = [[XCBVisual alloc] initWithVisualId:[screen screen]->root_visual];
     [visual setVisualTypeForScreen:screen];
-    
-    [self renderFrameResizeBar:frame visual:visual];
-}
-
-- (void)renderFrameResizeBar:(XCBFrame *)frame visual:(XCBVisual *)visual {
-    #define RESIZE_BAR_HEIGHT 9
-    
-    CGFloat width = frame.windowRect.size.width;
-    CGFloat height = frame.windowRect.size.height;
-    CGFloat barY = height - RESIZE_BAR_HEIGHT;
-    
-    cairo_surface_t *surface = cairo_xcb_surface_create(
-        [frame.connection connection],
-        [frame window],
-        [visual visualType],
-        width,
-        height
-    );
-    
-    cairo_t *cr = cairo_create(surface);
-    
-    cairo_pattern_t *pat = cairo_pattern_create_linear(0, barY, 0, height);
-    cairo_pattern_add_color_stop_rgb(pat, 0.0, 0.85, 0.85, 0.85);
-    cairo_pattern_add_color_stop_rgb(pat, 1.0, 0.65, 0.65, 0.65);
-    
-    cairo_rectangle(cr, 0, barY, width, RESIZE_BAR_HEIGHT);
-    cairo_set_source(cr, pat);
-    cairo_fill(cr);
-    
-    cairo_pattern_destroy(pat);
-    cairo_surface_flush(surface);
-    cairo_destroy(cr);
-    cairo_surface_destroy(surface);
 }
 
 #pragma mark - Utility Methods
