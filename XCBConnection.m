@@ -1506,22 +1506,19 @@ static XCBConnection *sharedInstance;
 
 - (void)handleFocusOut:(xcb_focus_out_event_t *)anEvent
 {
-    // Just log, don't do anything else
-    // FocusOut is informational only
-    NSLog(@"[FocusOut] Window %u lost focus, mode=%d, detail=%d", 
-          anEvent->event, anEvent->mode, anEvent->detail);
+    // Only log significant focus changes, ignore grab/ungrab events
+    if (anEvent->mode != XCB_NOTIFY_MODE_GRAB && anEvent->mode != XCB_NOTIFY_MODE_UNGRAB) {
+        NSLog(@"[Focus] Window %u lost focus", anEvent->event);
+    }
 }
 
 - (void)handleFocusIn:(xcb_focus_in_event_t *)anEvent
 {
     XCBWindow *window = [self windowForXCBId:anEvent->event];
 
-    NSLog(@"[FocusIn] Window %u received FocusIn, mode=%d, detail=%d", 
-          anEvent->event, anEvent->mode, anEvent->detail);
-
+    // Ignore grab/ungrab events
     if (anEvent->mode == XCB_NOTIFY_MODE_GRAB || anEvent->mode == XCB_NOTIFY_MODE_UNGRAB)
     {
-        NSLog(@"[FocusIn] Ignoring grab/ungrab focus event");
         return;
     }
 
@@ -1535,7 +1532,7 @@ static XCBConnection *sharedInstance;
         case XCB_NOTIFY_DETAIL_INFERIOR:
         case XCB_NOTIFY_DETAIL_NONLINEAR_VIRTUAL:
         case XCB_NOTIFY_DETAIL_NONLINEAR:
-            NSLog(@"[FocusIn] Window %u has focus, updating internal state only", anEvent->event);
+            NSLog(@"[Focus] Window %u gained focus", anEvent->event);
             
             // Update _NET_ACTIVE_WINDOW to reflect reality, but DON'T call focus()
             if (window && [window isKindOfClass:[XCBWindow class]] && 
