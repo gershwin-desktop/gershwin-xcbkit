@@ -12,6 +12,7 @@
 #import "services/TitleBarSettingsService.h"
 #import "XCBRenderingEngine.h"
 #import <xcb/xcb_aux.h>
+#import <math.h>
 
 @implementation XCBFrame
 
@@ -624,19 +625,25 @@ void resizeFromAngleForEvent(xcb_motion_notify_event_t *anEvent,
 
 - (void) moveTo:(XCBPoint)coordinates
 {
-    XCBPoint pos = [super windowRect].position;
+    // Calculate new position using proper offset from root coordinates
+    XCBPoint newPos = XCBMakePoint(coordinates.x - offset.x, coordinates.y - offset.y);
 
-    pos.x = pos.x + coordinates.x - offset.x;
-    pos.y = pos.y + coordinates.y - offset.y;
+    // Only proceed if this is a meaningful position change
+    XCBPoint currentPos = [super windowRect].position;
+    if (fabs(newPos.x - currentPos.x) < 1.0 && fabs(newPos.y - currentPos.y) < 1.0) {
+        return; // Skip sub-pixel movements
+    }
 
-    int32_t values[] = {pos.x, pos.y};
+    int32_t values[] = {(int32_t)newPos.x, (int32_t)newPos.y};
 
     xcb_configure_window([connection connection], window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values);
 
-    XCBRect newRect = XCBMakeRect(pos, XCBMakeSize([super windowRect].size.width, [super windowRect].size.height));
+    // Defer rect updates until after X server processes the request
+    // This prevents desynchronization between our state and the actual window position
+    XCBRect newRect = XCBMakeRect(newPos, XCBMakeSize([super windowRect].size.width, [super windowRect].size.height));
     [super setWindowRect:newRect];
 
-    [super setOriginalRect:XCBMakeRect(XCBMakePoint(pos.x, pos.y),
+    [super setOriginalRect:XCBMakeRect(XCBMakePoint(newPos.x, newPos.y),
                                        XCBMakeSize([super originalRect].size.width,
                                                    [super originalRect].size.height))];
 }

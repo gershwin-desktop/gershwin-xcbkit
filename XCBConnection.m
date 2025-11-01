@@ -20,6 +20,7 @@
 #import <enums/EIcccm.h>
 #import "services/TitleBarSettingsService.h"
 #import "XCBRenderingEngine.h"
+#import <math.h>
 
 @implementation XCBConnection
 
@@ -63,6 +64,10 @@ static XCBConnection *sharedInstance;
     // Initialize property change debouncing
     pendingPropertyChanges = [[NSMutableDictionary alloc] init];
     propertyDebounceTimer = nil;
+
+    // Initialize motion throttling
+    lastMotionPoint = XCBMakePoint(-1, -1);
+    lastMotionTime = 0;
 
     if (aDisplay == NULL)
     {
@@ -1202,16 +1207,28 @@ static XCBConnection *sharedInstance;
         ([[window parentWindow] window] != [rootWindow window])*/)
     {
         frame = (XCBFrame *) [window parentWindow];
-        [window grabPointer];
 
-        XCBPoint destPoint = XCBMakePoint(anEvent->event_x, anEvent->event_y);
-        [frame moveTo:destPoint];
-        [frame configureClient];
+        // Use root coordinates for consistent movement
+        XCBPoint currentPoint = XCBMakePoint(anEvent->root_x, anEvent->root_y);
+
+        // Motion throttling: only process if moved significantly or enough time has passed
+        NSTimeInterval motionTime = [[NSDate date] timeIntervalSince1970];
+        double deltaX = currentPoint.x - lastMotionPoint.x;
+        double deltaY = currentPoint.y - lastMotionPoint.y;
+        double distance = sqrt(deltaX * deltaX + deltaY * deltaY);
+
+        if (distance > 2.0 || (motionTime - lastMotionTime) > 0.016) { // ~60fps or 2 pixel threshold
+            [window grabPointer];
+            [frame moveTo:currentPoint];
+
+            // Update throttling state
+            lastMotionPoint = currentPoint;
+            lastMotionTime = motionTime;
+            needFlush = YES;
+        }
 
         window = nil;
         frame = nil;
-        needFlush = YES;
-
         return;
     }
 
@@ -1432,7 +1449,9 @@ static XCBConnection *sharedInstance;
     [titleBar drawTitleBarComponents];
     [self drawAllTitleBarsExcept:titleBar];
 
-    [frame setOffset:XCBMakePoint(anEvent->event_x, anEvent->event_y)];
+    // Use root coordinates for consistent offset calculation
+    XCBRect frameRect = [frame windowRect];
+    [frame setOffset:XCBMakePoint(anEvent->root_x - frameRect.position.x, anEvent->root_y - frameRect.position.y)];
 
     if ([frame window] != anEvent->root && [[frame childWindowForKey:ClientWindow] canMove])
         dragState = YES;
@@ -1496,6 +1515,14 @@ static XCBConnection *sharedInstance;
     }*/
 
     [window ungrabPointer];
+
+    // Send configure notification to client when drag operation ends
+    if (dragState && [window isKindOfClass:[XCBTitleBar class]]) {
+        frame = (XCBFrame *) [window parentWindow];
+        [frame configureClient];
+        frame = nil;
+    }
+
     dragState = NO;
     resizeState = NO;
     window = nil;

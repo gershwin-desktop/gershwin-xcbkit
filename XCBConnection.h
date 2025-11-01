@@ -11,6 +11,7 @@
 #import "XCBVisual.h"
 #import "utils/XCBCreateWindowTypeRequest.h"
 #import "utils/XCBWindowTypeResponse.h"
+#import "utils/XCBShape.h"
 #import "XCBReply.h"
 #include <xcb/xcb.h>
 
@@ -42,6 +43,10 @@
     // Property change debouncing
     NSMutableDictionary *pendingPropertyChanges;
     NSTimer *propertyDebounceTimer;
+
+    // Motion throttling
+    XCBPoint lastMotionPoint;
+    NSTimeInterval lastMotionTime;
 }
 
 @property (nonatomic, assign) BOOL dragState;
