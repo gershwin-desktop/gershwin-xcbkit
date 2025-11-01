@@ -60,6 +60,10 @@ static XCBConnection *sharedInstance;
     dragState = NO;
     isAWindowManager = isWindowManager;
 
+    // Initialize property change debouncing
+    pendingPropertyChanges = [[NSMutableDictionary alloc] init];
+    propertyDebounceTimer = nil;
+
     if (aDisplay == NULL)
     {
         NSLog(@"[XCBConnection] Connecting to the default display in env DISPLAY");
@@ -1562,27 +1566,19 @@ static XCBConnection *sharedInstance;
     XCBAtomService *atomService = [XCBAtomService sharedInstanceWithConnection:self];
 
     NSString *name = [atomService atomNameFromAtom:anEvent->atom];
-    NSLog(@"Property changed for window: %u, with name: %@", anEvent->window, name);
 
+    // Check if window exists and property name is valid before scheduling
     XCBWindow *window = [self windowForXCBId:anEvent->window];
-    
-    if (!window)
-    {
+    if (!window || !name) {
         atomService = nil;
-        icccmService = nil;
         name = nil;
         return;
     }
 
-    // Re-read WM_HINTS when it changes
-    if ([name isEqualToString:@"WM_HINTS"])
-    {
-        NSLog(@"[%u] WM_HINTS changed, re-reading...", anEvent->window);
-        [window refreshCachedWMHints];
-    }
+    // Schedule debounced property change processing
+    [self schedulePropertyChange:name forWindow:anEvent->window];
 
     atomService = nil;
-    icccmService = nil;
     name = nil;
     window = nil;
 
@@ -2339,7 +2335,88 @@ static XCBConnection *sharedInstance;
 
 - (void)dealloc
 {
+    // Clean up debouncing timer
+    if (propertyDebounceTimer) {
+        [propertyDebounceTimer invalidate];
+        propertyDebounceTimer = nil;
+    }
+    pendingPropertyChanges = nil;
+
     xcb_disconnect(connection);
+}
+
+/*** PROPERTY CHANGE DEBOUNCING IMPLEMENTATION ***/
+
+- (void) schedulePropertyChange:(NSString*)propertyName forWindow:(xcb_window_t)windowId
+{
+    // Defensive check for nil property name
+    if (!propertyName) {
+        NSLog(@"[Debounce] Skipping nil property name for window %u", windowId);
+        return;
+    }
+
+    // Create window key
+    NSString *windowKey = [NSString stringWithFormat:@"%u", windowId];
+
+    // Get or create property set for this window
+    NSMutableSet *properties = [pendingPropertyChanges objectForKey:windowKey];
+    if (!properties) {
+        properties = [[NSMutableSet alloc] init];
+        [pendingPropertyChanges setObject:properties forKey:windowKey];
+    }
+
+    // Add property to the set (automatically deduplicates)
+    [properties addObject:propertyName];
+
+    // Reset the debounce timer
+    if (propertyDebounceTimer) {
+        [propertyDebounceTimer invalidate];
+    }
+
+    // Schedule processing after 50ms of inactivity
+    propertyDebounceTimer = [NSTimer scheduledTimerWithTimeInterval:0.05
+                                                            target:self
+                                                          selector:@selector(processDelayedPropertyChanges:)
+                                                          userInfo:nil
+                                                           repeats:NO];
+}
+
+- (void) processDelayedPropertyChanges:(NSTimer*)timer
+{
+    // Process all pending property changes
+    for (NSString *windowKey in [pendingPropertyChanges allKeys]) {
+        xcb_window_t windowId = [windowKey intValue];
+        NSMutableSet *properties = [pendingPropertyChanges objectForKey:windowKey];
+
+        XCBWindow *window = [self windowForXCBId:windowId];
+        if (!window) {
+            continue;
+        }
+
+        // Log only once per window with all changed properties
+        NSArray *sortedProperties = [[properties allObjects] sortedArrayUsingSelector:@selector(compare:)];
+        NSString *propertiesList = [sortedProperties componentsJoinedByString:@", "];
+        NSLog(@"[Debounced] Properties changed for window %u: %@", windowId, propertiesList);
+
+        // Process specific property types that need action
+        if ([properties containsObject:@"WM_HINTS"]) {
+            NSLog(@"[%u] WM_HINTS changed, re-reading...", windowId);
+            [window refreshCachedWMHints];
+        }
+
+        // Add WM_NORMAL_HINTS handling to trigger configure client
+        if ([properties containsObject:@"WM_NORMAL_HINTS"]) {
+            // Only configure if this is a framed window to reduce spam
+            if ([window parentWindow] && [[window parentWindow] isKindOfClass:[XCBFrame class]]) {
+                XCBFrame *frame = (XCBFrame*)[window parentWindow];
+                [frame configureClient];
+            }
+        }
+    }
+
+    // Clear pending changes
+    [pendingPropertyChanges removeAllObjects];
+    propertyDebounceTimer = nil;
 }
 
 @end

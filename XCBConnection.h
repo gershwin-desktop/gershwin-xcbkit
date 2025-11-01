@@ -38,6 +38,10 @@
 	BOOL needFlush;
     xcb_timestamp_t currentTime;
     xcb_window_t clientList[CLIENTLISTSIZE];
+
+    // Property change debouncing
+    NSMutableDictionary *pendingPropertyChanges;
+    NSTimer *propertyDebounceTimer;
 }
 
 @property (nonatomic, assign) BOOL dragState;
@@ -104,6 +108,10 @@
 - (void) handleReparentNotify: (xcb_reparent_notify_event_t*)anEvent;
 - (void) handlePropertyNotify: (xcb_property_notify_event_t*)anEvent;
 - (void) handleClientMessage: (xcb_client_message_event_t*)anEvent;
+
+/*** PROPERTY CHANGE DEBOUNCING ***/
+- (void) schedulePropertyChange:(NSString*)propertyName forWindow:(xcb_window_t)windowId;
+- (void) processDelayedPropertyChanges:(NSTimer*)timer;
 - (void) handleDestroyNotify: (xcb_destroy_notify_event_t*)anEvent;
 - (void) handleFocusOut: (xcb_focus_out_event_t*)anEvent;
 - (void) handleFocusIn: (xcb_focus_in_event_t*)anEvent;
