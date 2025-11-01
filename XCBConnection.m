@@ -194,6 +194,12 @@ static XCBConnection *sharedInstance;
         return;
 
     xcb_window_t win = [aWindow window];
+
+    if (win == XCB_NONE || win == 0) {
+        NSLog(@"[XCBConnection] Skipping unregister of invalid window ID %u", win);
+        return;
+    }
+
     NSLog(@"[XCBConnection] Removing the window %u from the windowsMap", win);
     NSNumber *key = [[NSNumber alloc] initWithInt:win];
     [windowsMap removeObjectForKey:key];
@@ -411,6 +417,12 @@ static XCBConnection *sharedInstance;
 - (void)handleMapNotify:(xcb_map_notify_event_t *)anEvent
 {
     XCBWindow *window = [self windowForXCBId:anEvent->window];
+
+    if (!window) {
+        NSLog(@"[%@] Ignoring map notify for unknown window ID %u", NSStringFromClass([self class]), anEvent->window);
+        return;
+    }
+
     NSLog(@"[%@] The window %u is mapped!", NSStringFromClass([self class]), [window window]);
     [window setIsMapped:YES];
 
@@ -432,17 +444,36 @@ static XCBConnection *sharedInstance;
 - (void)handleUnMapNotify:(xcb_unmap_notify_event_t *)anEvent
 {
     XCBWindow *window = [self windowForXCBId:anEvent->window];
+
+    if (!window) {
+        NSLog(@"[%@] Ignoring unmap notify for unknown window ID %u", NSStringFromClass([self class]), anEvent->window);
+        return;
+    }
+
     [window setIsMapped:NO];
     NSLog(@"[%@] The window %u is unmapped!", NSStringFromClass([self class]), [window window]);
 
     XCBFrame *frameWindow = (XCBFrame *) [window parentWindow];
 
-    XCBScreen *scr = [window onScreen];
+    // Skip onScreen call if window ID is invalid to prevent BadWindow errors
+    XCBScreen *scr = nil;
+    if ([window window] != XCB_NONE && [window window] != 0) {
+        scr = [window onScreen];
+    } else {
+        NSLog(@"[%@] Skipping onScreen for invalid window ID %u during unmap", NSStringFromClass([self class]), [window window]);
+    }
 
     // Clear _NET_ACTIVE_WINDOW if this was the active window
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+
+    if (!scr) {
+        NSLog(@"[%@] Skipping EWMH active window check - no screen available for window %u", NSStringFromClass([self class]), [window window]);
+        ewmhService = nil;
+        return;
+    }
+
     XCBWindow *rootWindow = [scr rootWindow];
-    
+
     xcb_get_property_reply_t *reply = [ewmhService getProperty:[ewmhService EWMHActiveWindow]
                                                   propertyType:XCB_ATOM_WINDOW
                                                      forWindow:rootWindow
@@ -1776,7 +1807,12 @@ static XCBConnection *sharedInstance;
 {
     NSLog(@"Enter notify for window: %u", anEvent->event);
     XCBWindow *window = [self windowForXCBId:anEvent->event];
-    
+
+    if (!window) {
+        NSLog(@"[%@] Ignoring enter notify for unknown window ID %u", NSStringFromClass([self class]), anEvent->event);
+        return;
+    }
+
     // Ignore enter notify on desktop windows
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
     if ([[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]])
@@ -1831,6 +1867,12 @@ static XCBConnection *sharedInstance;
 - (void)handleExpose:(xcb_expose_event_t *)anEvent
 {
     XCBWindow *window = [self windowForXCBId:anEvent->window];
+
+    if (!window) {
+        NSLog(@"[%@] Ignoring expose event for unknown window ID %u", NSStringFromClass([self class]), anEvent->window);
+        return;
+    }
+
     [window onScreen];
     XCBTitleBar *titleBar;
     XCBFrame *frame;
@@ -1910,6 +1952,12 @@ static XCBConnection *sharedInstance;
 - (void)handleDestroyNotify:(xcb_destroy_notify_event_t *)anEvent
 {
     XCBWindow *window = [self windowForXCBId:anEvent->window];
+
+    if (!window) {
+        NSLog(@"[%@] Ignoring destroy notify for unknown window ID %u", NSStringFromClass([self class]), anEvent->window);
+        return;
+    }
+
     XCBFrame *frameWindow = nil;
     XCBTitleBar *titleBarWindow = nil;
     XCBWindow *clientWindow = nil;

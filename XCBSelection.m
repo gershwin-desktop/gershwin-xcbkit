@@ -46,8 +46,10 @@
 	}
     
     XCBWindow *owner = reply->owner != XCB_NONE ? [[XCBWindow alloc] initWithXCBWindow:reply->owner andConnection:connection] : nil;
-    [connection registerWindow:owner];
-    [owner onScreen];
+    if (owner) {
+        [connection registerWindow:owner];
+        [owner onScreen];
+    }
     
     free(reply);
     return owner;

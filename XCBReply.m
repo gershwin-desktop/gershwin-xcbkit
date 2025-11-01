@@ -111,7 +111,11 @@
             default:
                 break;
         }
-        NSLog(@"Error: %@", errorMessage);
+
+        // Suppress BadWindow errors as they are expected during window cleanup
+        if (error->error_code != BadWindow) {
+            NSLog(@"Error: %@", errorMessage);
+        }
     }
     
     if (!isError)

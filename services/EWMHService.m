@@ -505,6 +505,11 @@
                     withDataLength:(uint32_t)dataLength
                           withData:(const void *) data
 {
+    if (!aWindow || [aWindow window] == XCB_NONE || [aWindow window] == 0) {
+        NSLog(@"[EWMHService] Skipping changePropertiesForWindow on invalid window (window=%u)", aWindow ? [aWindow window] : 0);
+        return;
+    }
+
     xcb_atom_t property = [atomService atomFromCachedAtomsWithKey:propertyKey];
 
     xcb_change_property([connection connection],
@@ -524,6 +529,11 @@
                delete:(BOOL)deleteProperty
                length:(uint32_t)len
 {
+    if (!aWindow || [aWindow window] == XCB_NONE || [aWindow window] == 0) {
+        NSLog(@"[EWMHService] Skipping getProperty on invalid window (window=%u)", aWindow ? [aWindow window] : 0);
+        return NULL;
+    }
+
     xcb_atom_t property = [atomService atomFromCachedAtomsWithKey:aPropertyName];
 
     xcb_get_property_cookie_t cookie = xcb_get_property([connection connection],
@@ -1035,6 +1045,11 @@
 
 - (xcb_get_property_reply_t*) netWmIconFromWindow:(XCBWindow*)aWindow
 {
+    if (!aWindow || [aWindow window] == XCB_NONE || [aWindow window] == 0) {
+        NSLog(@"[EWMHService] Skipping netWmIconFromWindow on invalid window (window=%u)", aWindow ? [aWindow window] : 0);
+        return NULL;
+    }
+
     xcb_get_property_cookie_t cookie = xcb_get_property_unchecked([connection connection],
                                                                   false,
                                                                   [aWindow window],
@@ -1075,6 +1090,11 @@
 
 - (void) updateNetActiveWindow:(XCBWindow*)aWindow
 {
+    if (!aWindow || [aWindow window] == XCB_NONE || [aWindow window] == 0) {
+        NSLog(@"[EWMHService] Skipping updateNetActiveWindow on invalid window (window=%u)", aWindow ? [aWindow window] : 0);
+        return;
+    }
+
     XCBWindow *rootWindow = [[aWindow onScreen] rootWindow];
     xcb_window_t win = [aWindow window];
 

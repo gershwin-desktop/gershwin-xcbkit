@@ -109,6 +109,11 @@
         withAboveWindow:(XCBWindow *)anAbove
          withConnection:(XCBConnection *)aConnection
 {
+    if (aWindow == XCB_NONE || aWindow == 0) {
+        NSLog(@"[Window] Rejecting initialization with invalid window ID %u", aWindow);
+        return nil;
+    }
+
     self = [super init];
     window = aWindow;
     parentWindow = aParent;
@@ -390,10 +395,10 @@
 {
     NSUInteger size = [[connection screens] count];
     XCBQueryTreeReply *queryTreeReply = [self queryTree];
-    
-    if ([queryTreeReply message] == BadWindow)
+
+    if (queryTreeReply == nil || [queryTreeReply message] == BadWindow)
         return nil;
-    
+
     XCBWindow *rootWindow = [queryTreeReply rootWindow];
 
     for (int i = 0; i < size; i++)
@@ -502,6 +507,11 @@
 
 - (void) updateAttributes
 {
+    if (window == XCB_NONE || window == 0) {
+        NSLog(@"[Window] Skipping updateAttributes on invalid window ID %u", window);
+        return;
+    }
+
     xcb_generic_error_t *error;
     xcb_get_window_attributes_cookie_t cookie = xcb_get_window_attributes([connection connection], window);
     xcb_get_window_attributes_reply_t *attr = xcb_get_window_attributes_reply([connection connection], cookie, &error);
@@ -550,6 +560,11 @@
 
 - (XCBQueryTreeReply*) queryTree
 {
+    if (window == XCB_NONE || window == 0) {
+        NSLog(@"[Window] Skipping queryTree on invalid window ID %u", window);
+        return nil;
+    }
+
     XCBQueryTreeReply *queryReply;
     xcb_generic_error_t *error;
 
@@ -580,6 +595,11 @@
 
 - (void)setWindowBorderWidth:(uint32_t)border
 {
+    if (window == XCB_NONE || window == 0) {
+        NSLog(@"[Window] Skipping setWindowBorderWidth on invalid window ID %u", window);
+        return;
+    }
+
     uint16_t tempMask = XCB_CONFIG_WINDOW_BORDER_WIDTH;
     uint32_t valueForBorder[1] = {border};
 
@@ -588,6 +608,11 @@
 
 - (void)restoreDimensionAndPosition
 {
+    if (window == XCB_NONE || window == 0) {
+        NSLog(@"[Window] Skipping restoreDimensionAndPosition on invalid window ID %u", window);
+        return;
+    }
+
     uint16_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
 
     /*** restore to the previous dimension and position of the window ***/
@@ -630,6 +655,11 @@
 
 - (void)maximizeToSize:(XCBSize)aSize andPosition:(XCBPoint)aPosition
 {
+    if (window == XCB_NONE || window == 0) {
+        NSLog(@"[Window] Skipping maximizeToSize on invalid window ID %u", window);
+        return;
+    }
+
     uint16_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
 
 
@@ -796,6 +826,11 @@
 
 - (void)destroy
 {
+    if (window == XCB_NONE || window == 0) {
+        NSLog(@"[Window] Skipping destroy on invalid window ID %u", window);
+        return;
+    }
+
     xcb_destroy_window([connection connection], window);
     [connection unregisterWindow:self];
     [connection setNeedFlush:YES];
@@ -993,6 +1028,11 @@
 
 - (XCBGeometryReply *)geometries
 {
+    if (window == XCB_NONE || window == 0) {
+        NSLog(@"[Window] Skipping geometries on invalid window ID %u", window);
+        return nil;
+    }
+
     xcb_get_geometry_cookie_t cookie = xcb_get_geometry([connection connection], window);
     xcb_generic_error_t *error;
     xcb_get_geometry_reply_t *pixmapReply;
