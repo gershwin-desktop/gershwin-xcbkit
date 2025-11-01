@@ -427,20 +427,23 @@ static XCBConnection *sharedInstance;
         return;
     }
 
-    NSLog(@"[%@] The window %u is mapped!", NSStringFromClass([self class]), [window window]);
-    [window setIsMapped:YES];
+    // Only process if window state is actually changing
+    if (![window isMapped]) {
+        NSLog(@"[%@] The window %u is mapped!", NSStringFromClass([self class]), [window window]);
+        [window setIsMapped:YES];
 
-    // Ensure desktop stays at bottom when any window is mapped
-    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
-    if (![[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]])
-    {
-        XCBWindow *desktop = [self findDesktopWindow];
-        if (desktop)
+        // Ensure desktop stays at bottom when any window is mapped
+        EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+        if (![[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]])
         {
-            [desktop stackAtBottom];
+            XCBWindow *desktop = [self findDesktopWindow];
+            if (desktop)
+            {
+                [desktop stackAtBottom];
+            }
         }
+        ewmhService = nil;
     }
-    ewmhService = nil;
 
     window = nil;
 }
@@ -454,13 +457,17 @@ static XCBConnection *sharedInstance;
         return;
     }
 
-    [window setIsMapped:NO];
-    NSLog(@"[%@] The window %u is unmapped!", NSStringFromClass([self class]), [window window]);
-
     XCBFrame *frameWindow = (XCBFrame *) [window parentWindow];
+    XCBScreen *scr = nil;
+    EWMHService *ewmhService = nil;
+    XCBWindow *rootWindow = nil;
+
+    // Only process if window state is actually changing
+    if ([window isMapped]) {
+        [window setIsMapped:NO];
+        NSLog(@"[%@] The window %u is unmapped!", NSStringFromClass([self class]), [window window]);
 
     // Skip onScreen call if window ID is invalid to prevent BadWindow errors
-    XCBScreen *scr = nil;
     if ([window window] != XCB_NONE && [window window] != 0) {
         scr = [window onScreen];
     } else {
@@ -468,7 +475,7 @@ static XCBConnection *sharedInstance;
     }
 
     // Clear _NET_ACTIVE_WINDOW if this was the active window
-    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    ewmhService = [EWMHService sharedInstanceWithConnection:self];
 
     if (!scr) {
         NSLog(@"[%@] Skipping EWMH active window check - no screen available for window %u", NSStringFromClass([self class]), [window window]);
@@ -476,7 +483,7 @@ static XCBConnection *sharedInstance;
         return;
     }
 
-    XCBWindow *rootWindow = [scr rootWindow];
+    rootWindow = [scr rootWindow];
 
     xcb_get_property_reply_t *reply = [ewmhService getProperty:[ewmhService EWMHActiveWindow]
                                                   propertyType:XCB_ATOM_WINDOW
@@ -511,6 +518,7 @@ static XCBConnection *sharedInstance;
         [self reparentWindow:window toWindow:[[window queryTree] rootWindow] position:rect.position];
         [window setDecorated:NO];
         [frameWindow destroy];
+    }
     }
 
     window = nil;
