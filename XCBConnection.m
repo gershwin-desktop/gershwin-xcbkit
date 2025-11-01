@@ -622,6 +622,7 @@ static XCBConnection *sharedInstance;
                             {
                                 [groupedTitleBar setIsAbove:YES];
                                 [groupedTitleBar drawTitleBarComponents];
+                                [groupedTitleBar putButtonsBackgroundPixmaps:YES]; // Show active buttons for focused window
                                 [self drawAllTitleBarsExcept:groupedTitleBar];
                             }
                             
@@ -657,6 +658,7 @@ static XCBConnection *sharedInstance;
                     {
                         [titleBar setIsAbove:YES];
                         [titleBar drawTitleBarComponents];
+                        [titleBar putButtonsBackgroundPixmaps:YES]; // Show active buttons for focused window
                         [self drawAllTitleBarsExcept:titleBar];
                     }
                     
@@ -1447,6 +1449,7 @@ static XCBConnection *sharedInstance;
     [titleBar setIsAbove:YES];
     [titleBar setButtonsAbove:YES];
     [titleBar drawTitleBarComponents];
+    [titleBar putButtonsBackgroundPixmaps:YES]; // Show active buttons for focused window
     [self drawAllTitleBarsExcept:titleBar];
 
     // Use root coordinates for consistent offset calculation
@@ -1558,28 +1561,40 @@ static XCBConnection *sharedInstance;
         case XCB_NOTIFY_DETAIL_NONLINEAR_VIRTUAL:
         case XCB_NOTIFY_DETAIL_NONLINEAR:
             NSLog(@"[Focus] Window %u gained focus", anEvent->event);
-            
+
             // Update _NET_ACTIVE_WINDOW to reflect reality, but DON'T call focus()
-            if (window && [window isKindOfClass:[XCBWindow class]] && 
+            if (window && [window isKindOfClass:[XCBWindow class]] &&
                 [[window parentWindow] isKindOfClass:[XCBFrame class]])
             {
                 XCBFrame *frame = (XCBFrame *)[window parentWindow];
                 XCBWindow *clientWindow = [frame childWindowForKey:ClientWindow];
-                
+
                 if (clientWindow)
                 {
+                    NSLog(@"[Focus] Updating titlebar for FocusIn on window %u", anEvent->event);
+
+                    // Add keyboard ungrab for better synchronization like button press handler
+                    xcb_ungrab_keyboard([self connection], XCB_CURRENT_TIME);
+
                     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
                     [ewmhService updateNetActiveWindow:clientWindow];
-                    
-                    // Update titlebar appearance
+
+                    // Update titlebar appearance - SAME ORDER AS BUTTON PRESS HANDLER
                     XCBTitleBar *titleBar = (XCBTitleBar *)[frame childWindowForKey:TitleBar];
                     if (titleBar)
                     {
+                        NSLog(@"[Focus] Setting titlebar %u as active", [titleBar window]);
                         [titleBar setIsAbove:YES];
+                        [titleBar setButtonsAbove:YES];
                         [titleBar drawTitleBarComponents];
+                        [titleBar putButtonsBackgroundPixmaps:YES]; // Show active buttons IMMEDIATELY after draw
                         [self drawAllTitleBarsExcept:titleBar];
+                        NSLog(@"[Focus] Titlebar %u buttons set to active", [titleBar window]);
+
+                        // Force X server synchronization like button press handler does
+                        xcb_flush([self connection]);
                     }
-                    
+
                     ewmhService = nil;
                 }
             }
@@ -1657,16 +1672,32 @@ static XCBConnection *sharedInstance;
                 XCBTitleBar *titleBar = (XCBTitleBar *)[frame childWindowForKey:TitleBar];
                 
                 NSLog(@"[ClientMessage] Focusing window %u from dock click", [window window]);
-                
+
+                // Ungrab keyboard like we do in button press handler
+                xcb_ungrab_keyboard([self connection], XCB_CURRENT_TIME);
+
                 [frame stackAbove];
                 [window focus];
-                
+
+                // Ensure desktop stays at bottom after stacking operations
+                XCBWindow *desktop = [self findDesktopWindow];
+                if (desktop)
+                {
+                    [desktop stackAtBottom];
+                }
+
+                // Update titlebar state immediately - same as button press handler
                 if (titleBar)
                 {
+                    NSLog(@"[ClientMessage] Updating titlebar for dock focus on window %u", [window window]);
                     [titleBar setIsAbove:YES];
                     [titleBar setButtonsAbove:YES];
                     [titleBar drawTitleBarComponents];
+                    [titleBar putButtonsBackgroundPixmaps:YES]; // Show active buttons for focused window
                     [self drawAllTitleBarsExcept:titleBar];
+
+                    // Force immediate flush
+                    xcb_flush([self connection]);
                 }
             }
             else
@@ -1717,6 +1748,7 @@ static XCBConnection *sharedInstance;
                 [frame stackAbove];
                 titleBar = (XCBTitleBar *) [frame childWindowForKey:TitleBar]; //TODO: Can i put all this in a single method?
                 [titleBar drawTitleBarComponents];
+                [titleBar putButtonsBackgroundPixmaps:YES]; // Show active buttons for focused window
                 [self drawAllTitleBarsExcept:titleBar];
             }
         }
@@ -2192,6 +2224,8 @@ static XCBConnection *sharedInstance;
                 [titleBar setIsAbove:NO];
                 [titleBar setButtonsAbove:NO];
                 [titleBar drawTitleBarComponents];
+                [titleBar putButtonsBackgroundPixmaps:NO]; // Show inactive buttons for unfocused windows
+                NSLog(@"[Focus] Set titlebar %u buttons to inactive", [titleBar window]);
                 [frame setIsAbove:NO];
                 [frame stackBelow];
                 frame = nil;

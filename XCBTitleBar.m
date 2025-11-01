@@ -272,6 +272,8 @@
 
 - (void)putButtonsBackgroundPixmaps:(BOOL)aValue
 {
+    NSLog(@"[Button] putButtonsBackgroundPixmaps:%@ for titlebar %u", aValue ? @"YES" : @"NO", [self window]);
+
     if (hideWindowButton) {
         [hideWindowButton clearArea:[hideWindowButton windowRect] generatesExposure:NO];
     }
@@ -282,12 +284,19 @@
         [maximizeWindowButton clearArea:[maximizeWindowButton windowRect] generatesExposure:NO];
     }
 
-    if (hideWindowButton && [hideWindowButton pixmap] && [hideWindowButton dPixmap]) {
-        [XCBRenderingEngine renderButton:hideWindowButton active:aValue];
-        if (aValue) {
-            [hideWindowButton putWindowBackgroundWithPixmap:[hideWindowButton pixmap]];
+    if (hideWindowButton) {
+        NSLog(@"[Button] hideWindowButton pixmap:%u dPixmap:%u", [hideWindowButton pixmap], [hideWindowButton dPixmap]);
+        if ([hideWindowButton pixmap] && [hideWindowButton dPixmap]) {
+            [XCBRenderingEngine renderButton:hideWindowButton active:aValue];
+            if (aValue) {
+                NSLog(@"[Button] Setting hideWindowButton to active pixmap %u", [hideWindowButton pixmap]);
+                [hideWindowButton putWindowBackgroundWithPixmap:[hideWindowButton pixmap]];
+            } else {
+                NSLog(@"[Button] Setting hideWindowButton to inactive dPixmap %u", [hideWindowButton dPixmap]);
+                [hideWindowButton putWindowBackgroundWithPixmap:[hideWindowButton dPixmap]];
+            }
         } else {
-            [hideWindowButton putWindowBackgroundWithPixmap:[hideWindowButton dPixmap]];
+            NSLog(@"[Button] hideWindowButton missing pixmaps!");
         }
     }
     
