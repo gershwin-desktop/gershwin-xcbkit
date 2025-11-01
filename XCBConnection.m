@@ -1420,13 +1420,11 @@ static XCBConnection *sharedInstance;
     [frame stackAbove];
     
     // Ensure desktop stays at bottom after stacking operations
-    EWMHService *EwmhService = [EWMHService sharedInstanceWithConnection:self];
     XCBWindow *desktop = [self findDesktopWindow];
     if (desktop)
     {
         [desktop stackAtBottom];
     }
-    EwmhService = nil;
 
     titleBar = (XCBTitleBar *) [frame childWindowForKey:TitleBar];
     [titleBar setIsAbove:YES];
@@ -1662,12 +1660,10 @@ static XCBConnection *sharedInstance;
     XCBFrame *frame;
     XCBWindow *clientWindow;
 
-    XCBScreen *screen;
-    XCBVisual *visual;
 
     window = [self windowForXCBId:anEvent->window];
 
-    if (window == nil && frame == nil && titleBar == nil)
+    if (window == nil && titleBar == nil && frame == nil)
     {
         if ([ewmhService ewmhClientMessage:atomMessageName])
         {
@@ -1675,8 +1671,6 @@ static XCBConnection *sharedInstance;
             [ewmhService handleClientMessage:atomMessageName forWindow:window data:anEvent->data];
         }
 
-        screen = nil;
-        visual = nil;
         atomService = nil;
         ewmhService = nil;
         icccmService = nil;
@@ -1792,10 +1786,6 @@ static XCBConnection *sharedInstance;
 
     window = nil;
     titleBar = nil;
-    frame = nil;
-    clientWindow = nil;
-    screen = nil;
-    visual = nil;
     atomService = nil;
     atomMessageName = nil;
     ewmhService = nil;
@@ -1876,7 +1866,6 @@ static XCBConnection *sharedInstance;
 
     [window onScreen];
     XCBTitleBar *titleBar;
-    XCBFrame *frame;
     XCBRect area;
     XCBPoint position;
     XCBSize size;
@@ -1911,7 +1900,6 @@ static XCBConnection *sharedInstance;
     if ([window isKindOfClass:[XCBTitleBar class]])
     {
         titleBar = (XCBTitleBar *) window;
-        frame = (XCBFrame*)[titleBar parentWindow];
 
         if (!resizeState)
         {
@@ -1931,7 +1919,6 @@ static XCBConnection *sharedInstance;
 
     window = nil;
     titleBar = nil;
-    frame = nil;
 }
 
 - (void)handleReparentNotify:(xcb_reparent_notify_event_t *)anEvent
