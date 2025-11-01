@@ -24,6 +24,7 @@
 @synthesize leftBorderClicked;
 @synthesize topBorderClicked;
 @synthesize titleHeight;
+@synthesize lastConfiguredRect;
 
 - (id) initWithClientWindow:(XCBWindow *)aClientWindow withConnection:(XCBConnection *)aConnection
 {
@@ -89,6 +90,10 @@
     titleHeight = [settings heightDefined] ? [settings height] : [settings defaultHeight];
 
     [super setIsAbove:YES];
+
+    // Initialize last configured rect to invalid to force first configure
+    lastConfiguredRect = XCBInvalidRect;
+
     free(sizeHints);
     icccmService = nil;
     key= nil;
@@ -638,30 +643,45 @@ void resizeFromAngleForEvent(xcb_motion_notify_event_t *anEvent,
 
 - (void) configureClient
 {
-    xcb_configure_notify_event_t event;
     XCBWindow *clientWindow = [self childWindowForKey:ClientWindow];
     XCBRect rect = [[self geometries] rect];
     XCBRect clientRect = [clientWindow rectFromGeometries];
     TitleBarSettingsService *settings = [TitleBarSettingsService sharedInstance];
     uint16_t height = [settings heightDefined] ? [settings height] : [settings defaultHeight];
 
-    NSLog(@"Configure client!");
+    // Create the configuration rect that will be sent to client
+    XCBRect configRect = XCBMakeRect(
+        XCBMakePoint(rect.position.x, rect.position.y + height),
+        XCBMakeSize(clientRect.size.width, clientRect.size.height)
+    );
 
-    /*** synthetic event: coordinates must be in root space. ***/
+    // Only send configure notification if configuration actually changed
+    if (configRect.position.x != lastConfiguredRect.position.x ||
+        configRect.position.y != lastConfiguredRect.position.y ||
+        configRect.size.width != lastConfiguredRect.size.width ||
+        configRect.size.height != lastConfiguredRect.size.height) {
+        xcb_configure_notify_event_t event;
 
-    event.event = [clientWindow window];
-    event.window = [clientWindow window];
-    event.x = rect.position.x;
-    event.y = rect.position.y + height;
-    event.border_width = 0;
-    event.width = clientRect.size.width;
-    event.height = clientRect.size.height;
-    event.override_redirect = 0;
-    event.above_sibling = XCB_NONE;
-    event.response_type = XCB_CONFIGURE_NOTIFY;
-    event.sequence = 0;
+        NSLog(@"Configure client!");
 
-    [connection sendEvent:(const char*) &event toClient:clientWindow propagate:NO];
+        /*** synthetic event: coordinates must be in root space. ***/
+        event.event = [clientWindow window];
+        event.window = [clientWindow window];
+        event.x = configRect.position.x;
+        event.y = configRect.position.y;
+        event.border_width = 0;
+        event.width = configRect.size.width;
+        event.height = configRect.size.height;
+        event.override_redirect = 0;
+        event.above_sibling = XCB_NONE;
+        event.response_type = XCB_CONFIGURE_NOTIFY;
+        event.sequence = 0;
+
+        [connection sendEvent:(const char*) &event toClient:clientWindow propagate:NO];
+
+        // Update last configured rect
+        lastConfiguredRect = configRect;
+    }
 
     [clientWindow setWindowRect:clientRect];
 

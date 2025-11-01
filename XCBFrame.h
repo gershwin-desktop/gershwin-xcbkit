@@ -35,6 +35,7 @@ typedef NS_ENUM(NSInteger, childrenMask)
 @property (nonatomic, assign) BOOL leftBorderClicked;
 @property (nonatomic, assign) BOOL topBorderClicked;
 @property (nonatomic, assign) XCBPoint offset;
+@property (nonatomic, assign) XCBRect lastConfiguredRect;
 
 - (id) initWithClientWindow:(XCBWindow*) aClientWindow withConnection:(XCBConnection*) aConnection;
 - (id) initWithClientWindow:(XCBWindow*) aClientWindow
