@@ -940,19 +940,29 @@
 
 - (void) setInputFocus:(uint8_t)revertTo time:(xcb_timestamp_t)timestamp
 {
+    if (window == XCB_NONE || window == 0) {
+        NSLog(@"[Focus] Skipping setInputFocus on invalid window ID %u", window);
+        return;
+    }
+
     xcb_set_input_focus([connection connection], revertTo, window, timestamp);
     [connection flush];
 }
 
 - (void) focus
 {
+    if (window == XCB_NONE || window == 0) {
+        NSLog(@"[Focus] Skipping focus on invalid window ID %u", window);
+        return;
+    }
+
     xcb_client_message_event_t event;
     XCBAtomService *atomService = [XCBAtomService sharedInstanceWithConnection:connection];
     ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:connection];
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:connection];
-    
+
     BOOL hasTakeFocus = [icccmService hasProtocol:[icccmService WMTakeFocus] forWindow:self];
-    
+
     // Always set input focus - many apps don't handle the protocols correctly
     [self setInputFocus:XCB_INPUT_FOCUS_POINTER_ROOT time:[connection currentTime]];
     NSLog(@"[Focus] Set input focus on window %u", window);

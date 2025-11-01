@@ -1997,9 +1997,10 @@ static XCBConnection *sharedInstance;
     NSArray *windows = [windowsMap allValues];
     for (XCBWindow *win in windows)
     {
-        if ([win isMapped] && 
+        if ([win isMapped] &&
             [win isKindOfClass:[XCBWindow class]] &&
-            [[win parentWindow] isKindOfClass:[XCBFrame class]])
+            [[win parentWindow] isKindOfClass:[XCBFrame class]] &&
+            [win window] != XCB_NONE && [win window] != 0)
         {
             [win focus];
             NSLog(@"[%u] Auto-focused window after destroy", [win window]);
