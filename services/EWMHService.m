@@ -945,71 +945,78 @@
 {
     int i = 0;
     xcb_atom_t props[12];
+    NSMutableArray *activeStates = [[NSMutableArray alloc] init];
 
     if ([aWindow skipTaskBar])
     {
-        NSLog(@"Skip taskbar for window %u", [aWindow window]);
+        [activeStates addObject:@"SkipTaskbar"];
         props[i++] = [atomService atomFromCachedAtomsWithKey:EWMHWMStateSkipTaskbar];
     }
 
     if ([aWindow skipPager])
     {
-        NSLog(@"Skip Pager for window %u", [aWindow window]);
+        [activeStates addObject:@"SkipPager"];
         props[i++] = [atomService atomFromCachedAtomsWithKey:EWMHWMStateSkipPager];
     }
 
     if ([aWindow isAbove])
     {
-        NSLog(@"Above for window %u", [aWindow window]);
+        [activeStates addObject:@"Above"];
         props[i++] = [atomService atomFromCachedAtomsWithKey:EWMHWMStateAbove];
     }
 
     if ([aWindow isBelow])
     {
-        NSLog(@"Below for window %u", [aWindow window]);
+        [activeStates addObject:@"Below"];
         props[i++] = [atomService atomFromCachedAtomsWithKey:EWMHWMStateBelow];
     }
 
     if ([aWindow maximizedHorizontally])
     {
-        NSLog(@"Maximize horizotally for window %u", [aWindow window]);
+        [activeStates addObject:@"MaximizedH"];
         props[i++] = [atomService atomFromCachedAtomsWithKey:EWMHWMStateMaximizedHorz];
     }
 
     if ([aWindow maximizedVertically])
     {
-        NSLog(@"Maximize vertically for window %u", [aWindow window]);
+        [activeStates addObject:@"MaximizedV"];
         props[i++] = [atomService atomFromCachedAtomsWithKey:EWMHWMStateMaximizedVert];
     }
 
     if ([aWindow shaded])
     {
-        NSLog(@"Shaded for window %u", [aWindow window]);
+        [activeStates addObject:@"Shaded"];
         props[i++] = [atomService atomFromCachedAtomsWithKey:EWMHWMStateShaded];
     }
 
     if ([aWindow isMinimized])
     {
-        NSLog(@"Hidden for window %u", [aWindow window]);
+        [activeStates addObject:@"Hidden"];
         props[i++] = [atomService atomFromCachedAtomsWithKey:EWMHWMStateHidden];
     }
 
     if ([aWindow fullScreen])
     {
-        NSLog(@"Full screen for window %u", [aWindow window]);
+        [activeStates addObject:@"Fullscreen"];
         props[i++] = [atomService atomFromCachedAtomsWithKey:EWMHWMStateFullscreen];
     }
 
     if ([aWindow gotAttention])
     {
-        NSLog(@"Demands attention for window %u", [aWindow window]);
+        [activeStates addObject:@"DemandsAttention"];
         props[i++] = [atomService atomFromCachedAtomsWithKey:EWMHWMStateDemandsAttention];
     }
 
     if ([aWindow alwaysOnTop])
     {
-        NSLog(@"Sticky for window %u", [aWindow window]);
+        [activeStates addObject:@"Sticky"];
         props[i++] = [atomService atomFromCachedAtomsWithKey:EWMHWMStateSticky];
+    }
+
+    // Log a single summary message instead of individual property messages
+    if ([activeStates count] > 0) {
+        NSString *statesString = [activeStates componentsJoinedByString:@", "];
+        NSLog(@"Window %u states: %@", [aWindow window], statesString);
     }
 
     [self changePropertiesForWindow:aWindow
