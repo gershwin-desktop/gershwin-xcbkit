@@ -152,6 +152,12 @@ static XCBConnection *sharedInstance;
     if (!isAWindowManager)
         return;
 
+    if (aWindow == nil)
+    {
+        NSLog(@"[XCBConnection] WARNING: Attempted to register nil window!");
+        return;
+    }
+
     xcb_window_t win = [aWindow window];
 
     NSLog(@"[XCBConnection] Adding the window %u in the windowsMap", win);

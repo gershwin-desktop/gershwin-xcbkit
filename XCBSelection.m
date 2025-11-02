@@ -56,41 +56,45 @@
 - (void) setOwner:(XCBWindow *)aWindow
 {
     xcb_timestamp_t currentTime = [connection currentTime];
-    
+
     xcb_set_selection_owner([connection connection],
                             [aWindow window],
                             atom,
                             currentTime);
+
+    xcb_flush([connection connection]);
+
+    NSLog(@"[XCBSelection] Set selection owner for atom %u to window %u", atom, [aWindow window]);
 }
 
 - (BOOL)aquireWithWindow:(XCBWindow *)aWindow replace:(BOOL)replace
 {
     XCBWindow *currentOwner = [self requestOwner];
     BOOL aquired = NO;
-    
+
     if (currentOwner != nil)
     {
         if (!replace)
-			return NO;
-        
+            return NO;
+
         [self setOwner:aWindow];
-        
-        /* Wait for the old owner to go away */
-        
+
         XCBRect geometry = XCBInvalidRect;
-        
+
         do
         {
-            geometry =  [[currentOwner geometries] rect];
-            
+            geometry = [[currentOwner geometries] rect];
         } while (FnCheckXCBRectIsValid(geometry));
-        
+
         aquired = YES;
     }
-    
-    /* Announce that we are the new owner */
-    
-    XCBScreen *screen = [currentOwner screen];
+    else
+    {
+        [self setOwner:aWindow];
+        aquired = YES;
+    }
+
+    XCBScreen *screen = [aWindow onScreen];
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:connection];
     
     xcb_client_message_event_t ev;
