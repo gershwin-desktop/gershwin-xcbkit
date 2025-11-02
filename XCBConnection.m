@@ -586,6 +586,26 @@ static XCBConnection *sharedInstance;
                 return;
             }
 
+            if (*atom == [[ewmhService atomService] atomFromCachedAtomsWithKey:[ewmhService EWMHWMWindowTypeDesktop]])
+            {
+                NSLog(@"Desktop window %u to be registered", [window window]);
+                [self registerWindow:window];
+                [self mapWindow:window];
+                [window setDecorated:NO];
+                [window stackBelow];
+                XCBWindow *parentWindow = [[XCBWindow alloc] initWithXCBWindow:anEvent->parent andConnection:self];
+                [window setParentWindow:parentWindow];
+                [icccmService wmClassForWindow:window];
+                [window setWindowType:[ewmhService EWMHWMWindowTypeDesktop]];
+
+                window = nil;
+                ewmhService = nil;
+                name = nil;
+                parentWindow = nil;
+                free(windowTypeReply);
+                return;
+            }
+
             /*if (*atom == [[ewmhService atomService] atomFromCachedAtomsWithKey:[ewmhService EWMHWMWindowTypeDialog]])
             {
                 NSLog(@"Dialog window %u to be registered", [window window]);
@@ -712,7 +732,12 @@ static XCBConnection *sharedInstance;
     [frame setScreen:[window screen]];
     [window setNormalState];
     [frame setNormalState];
-    [frame stackBelow];
+
+    if ([[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]]) {
+        [frame stackBelow];
+    } else {
+        [frame stackAbove];
+    }
     [[frame childWindowForKey:TitleBar] setIsAbove:YES];
     [self drawAllTitleBarsExcept:(XCBTitleBar*)[frame childWindowForKey:TitleBar]];
     [icccmService wmClassForWindow:window];
@@ -787,8 +812,17 @@ static XCBConnection *sharedInstance;
 
         if (anEvent->value_mask & XCB_CONFIG_WINDOW_STACK_MODE)
         {
+            EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+            BOOL isDesktopWindow = window && [[window windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]];
+
+            if (isDesktopWindow && anEvent->stack_mode == XCB_STACK_MODE_ABOVE) {
+                NSLog(@"Desktop window %u attempted to stack above - forcing below", anEvent->window);
+                config_win_vals[i++] = XCB_STACK_MODE_BELOW;
+            } else {
+                config_win_vals[i++] = anEvent->stack_mode;
+            }
             config_win_mask |= XCB_CONFIG_WINDOW_STACK_MODE;
-            config_win_vals[i++] = anEvent->stack_mode;
+            ewmhService = nil;
         }
 
         xcb_configure_window(connection, anEvent->window, config_win_mask, config_win_vals);
@@ -1039,7 +1073,7 @@ static XCBConnection *sharedInstance;
     }
 
     [clientWindow focus];
-    //[frame stackAbove];
+    [frame stackAbove];
 
     titleBar = (XCBTitleBar *) [frame childWindowForKey:TitleBar];
     [titleBar setIsAbove:YES];
@@ -1200,7 +1234,7 @@ static XCBConnection *sharedInstance;
             if ([[window parentWindow] isKindOfClass:[XCBFrame class]]) //TODO: debUg to see if this is still necessary!!
             {
                 frame = (XCBFrame *) [window parentWindow];
-                //[frame stackAbove];
+                [frame stackAbove];
                 titleBar = (XCBTitleBar *) [frame childWindowForKey:TitleBar]; //TODO: Can i put all this in a single method?
                 [titleBar drawTitleBarComponents];
                 [self drawAllTitleBarsExcept:titleBar];
@@ -1657,7 +1691,6 @@ static XCBConnection *sharedInstance;
                 [titleBar setButtonsAbove:NO];
                 [titleBar drawTitleBarComponents];
                 [frame setIsAbove:NO];
-                [frame stackBelow];
                 frame = nil;
             }
 

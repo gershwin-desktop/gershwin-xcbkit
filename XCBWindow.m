@@ -844,6 +844,7 @@
 
 - (void)stackBelow
 {
+    NSLog(@"Window %u (%@) being stacked below", window, [self windowType] ?: @"unknown");
     uint32_t values[1] = {XCB_STACK_MODE_BELOW};
     xcb_configure_window([connection connection], window, XCB_CONFIG_WINDOW_STACK_MODE, &values);
     isAbove = NO;
@@ -1089,10 +1090,20 @@
 
     if (anEvent->value_mask & XCB_CONFIG_WINDOW_STACK_MODE)
     {
+        EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:connection];
+        BOOL isDesktopWindow = [[self windowType] isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]];
+
+        uint32_t stack_mode = anEvent->stack_mode;
+        if (isDesktopWindow && stack_mode == XCB_STACK_MODE_ABOVE) {
+            NSLog(@"Decorated desktop window %u attempted to stack above - forcing below", window);
+            stack_mode = XCB_STACK_MODE_BELOW;
+        }
+
         config_win_mask |= XCB_CONFIG_WINDOW_STACK_MODE;
         config_frame_mask |= XCB_CONFIG_WINDOW_STACK_MODE;
-        config_win_vals[win_i++] = anEvent->stack_mode;
-        config_frame_vals[frame_i++] = anEvent->stack_mode;
+        config_win_vals[win_i++] = stack_mode;
+        config_frame_vals[frame_i++] = stack_mode;
+        ewmhService = nil;
     }
 
     XCBTitleBar *titleBar = (XCBTitleBar*)[frame childWindowForKey:TitleBar];
