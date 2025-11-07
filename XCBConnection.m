@@ -14,6 +14,7 @@
 #import "functions/Transformers.h"
 #import "utils/CairoDrawer.h"
 #import "services/ICCCMService.h"
+#import "services/GNUstepWrapperService.h"
 #import "XCBRegion.h"
 #import "utils/CairoSurfacesSet.h"
 #import <xcb/xcb_aux.h>
@@ -1076,6 +1077,11 @@ static XCBConnection *sharedInstance;
         [ewmhService updateNetActiveWindow:window];
         ewmhService = nil;
 
+        // Check if this is a GNUstep wrapper window and handle accordingly
+        GNUstepWrapperService *wrapperService = [GNUstepWrapperService sharedInstanceWithConnection:self];
+        [wrapperService handleWindowClick:clientWindow withEvent:anEvent];
+        wrapperService = nil;
+
     }
 
     [clientWindow focus];
@@ -1169,8 +1175,14 @@ static XCBConnection *sharedInstance;
         case XCB_NOTIFY_DETAIL_INFERIOR:
         case XCB_NOTIFY_DETAIL_NONLINEAR_VIRTUAL:
         case XCB_NOTIFY_DETAIL_NONLINEAR:
+        {
             [window focus];
+
+            // Activate corresponding GNUstep wrapper application if it exists
+            GNUstepWrapperService *wrapperService = [GNUstepWrapperService sharedInstanceWithConnection:self];
+            [wrapperService handleWindowActivation:window];
             break;
+        }
         default:
             break;
     }

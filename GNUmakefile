@@ -32,6 +32,7 @@ $(FRAMEWORK_NAME)_OBJC_FILES = \
 			services/XCBAtomService.m \
 			services/ICCCMService.m \
 			services/TitleBarSettingsService.m \
+			services/GNUstepWrapperService.m \
 			utils/CairoDrawer.m \
 			utils/CairoSurfacesSet.m \
 			utils/XCBCreateWindowTypeRequest.m \
@@ -60,6 +61,7 @@ $(FRAMEWORK_NAME)_HEADER_FILES = \
 			services/XCBAtomService.h \
 			services/ICCCMService.h \
 			services/TitleBarSettingsService.h \
+			services/GNUstepWrapperService.h \
 			utils/CairoDrawer.h \
 			utils/CairoSurfacesSet.h \
 			utils/XCBCreateWindowTypeRequest.h \
