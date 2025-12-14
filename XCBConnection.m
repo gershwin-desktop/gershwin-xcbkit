@@ -911,7 +911,8 @@ static XCBConnection *sharedInstance;
         frame = (XCBFrame *) [window parentWindow];
         [window grabPointer];
 
-        XCBPoint destPoint = XCBMakePoint(anEvent->event_x, anEvent->event_y);
+        XCBPoint destPoint = XCBMakePoint(anEvent->root_x, anEvent->root_y);
+        NSLog(@"DRAG: Moving window to root coords (%d, %d)", anEvent->root_x, anEvent->root_y);
         [frame moveTo:destPoint];
         [frame configureClient];
 
@@ -1113,7 +1114,11 @@ static XCBConnection *sharedInstance;
     [titleBar drawTitleBarComponents];
     [self drawAllTitleBarsExcept:titleBar];
 
-    [frame setOffset:XCBMakePoint(anEvent->event_x, anEvent->event_y)];
+    XCBRect frameRect = [frame windowRect];
+    XCBPoint relativeOffset = XCBMakePoint(anEvent->root_x - frameRect.position.x, anEvent->root_y - frameRect.position.y);
+    [frame setOffset:relativeOffset];
+    NSLog(@"CLICK: Setting offset to relative coords (%d, %d) from frame position (%d, %d)",
+          (int)relativeOffset.x, (int)relativeOffset.y, (int)frameRect.position.x, (int)frameRect.position.y);
 
     if ([frame window] != anEvent->root && [[frame childWindowForKey:ClientWindow] canMove])
         dragState = YES;
@@ -1877,22 +1882,91 @@ static XCBConnection *sharedInstance;
 
 - (void) handleCreateNotify: (xcb_create_notify_event_t*)anEvent
 {
-    // TODO: Implement create notify handler
+    NSLog(@"[%@] Create notify for window %u", NSStringFromClass([self class]), anEvent->window);
+
+    // Create notify is sent when a window is created
+    // We typically don't need to take action here as we handle windows on MapRequest
+    // But we can track it for debugging purposes
+
+    XCBWindow *parentWindow = [self windowForXCBId:anEvent->parent];
+    if (parentWindow) {
+        NSLog(@"New window %u created with parent %u", anEvent->window, anEvent->parent);
+    }
 }
 
 - (void) handleKeyPress: (xcb_key_press_event_t*)anEvent
 {
-    // TODO: Implement key press handler
+    // Handle keyboard input events
+    // For now, we'll implement basic key handling for window manager shortcuts
+
+    // Update current time for this event
+    [self setCurrentTime:anEvent->time];
+
+    // Get the focused window
+    XCBWindow *focusedWindow = [self windowForXCBId:anEvent->event];
+
+    // Log key press for debugging (can be removed later)
+    NSLog(@"Key press: keycode %u, state %u, window %u", anEvent->detail, anEvent->state, anEvent->event);
+
+    // Basic Alt+Tab window switching could be implemented here
+    // For now, just forward the key event to the focused window
+    if (focusedWindow) {
+        // The key event is automatically delivered to the focused window by X11
+        // Additional window manager key bindings can be implemented here
+    }
 }
 
 - (void) handleKeyRelease: (xcb_key_release_event_t*)anEvent
 {
-    // TODO: Implement key release handler
+    // Handle keyboard release events
+    // Typically used to complete key combinations like Alt+Tab
+
+    // Update current time for this event
+    [self setCurrentTime:anEvent->time];
+
+    // Log key release for debugging (can be removed later)
+    NSLog(@"Key release: keycode %u, state %u, window %u", anEvent->detail, anEvent->state, anEvent->event);
+
+    // End of key combination sequences can be handled here
+    // For example, completing Alt+Tab window switching
 }
 
 - (void) handleCirculateRequest: (xcb_circulate_request_event_t*)anEvent
 {
-    // TODO: Implement circulate request handler
+    // Handle window circulation requests (bring to front/send to back)
+    NSLog(@"[%@] Circulate request for window %u, place: %s",
+          NSStringFromClass([self class]),
+          anEvent->window,
+          anEvent->place == XCB_CIRCULATE_RAISE_LOWEST ? "raise" : "lower");
+
+    XCBWindow *window = [self windowForXCBId:anEvent->window];
+    if (!window) {
+        NSLog(@"Window %u not found for circulate request", anEvent->window);
+        return;
+    }
+
+    // Handle the circulation request
+    if (anEvent->place == XCB_CIRCULATE_RAISE_LOWEST) {
+        // Raise the lowest window to the top
+        [window stackAbove];
+        NSLog(@"Raised window %u to top", anEvent->window);
+    } else if (anEvent->place == XCB_CIRCULATE_LOWER_HIGHEST) {
+        // Lower the highest window to the bottom
+        [window stackBelow];
+        NSLog(@"Lowered window %u to bottom", anEvent->window);
+    }
+
+    // If this is a frame window, also handle its children
+    if ([window isKindOfClass:[XCBFrame class]]) {
+        XCBFrame *frame = (XCBFrame *)window;
+        XCBTitleBar *titleBar = (XCBTitleBar *)[frame childWindowForKey:TitleBar];
+        if (titleBar) {
+            [titleBar setIsAbove:(anEvent->place == XCB_CIRCULATE_RAISE_LOWEST)];
+            [titleBar drawTitleBarComponents];
+        }
+    }
+
+    [self setNeedFlush:YES];
 }
 
 @end

@@ -820,7 +820,7 @@
         event.response_type = XCB_CLIENT_MESSAGE;
         event.window = window;
         event.data.data32[0] = [atomService atomFromCachedAtomsWithKey:[icccmService WMDeleteWindow]];
-        event.data.data32[1] = [connection currentTime]; //FIXME:SET THE TIME OF THE EVENT OR UPDATE LOCALLY THE TIMESTAMP
+        event.data.data32[1] = XCB_CURRENT_TIME; // Use server's current time
         event.data.data32[2] = 0;
         event.data.data32[3] = 0;
         event.sequence = 0;
@@ -939,7 +939,7 @@
         event.response_type = XCB_CLIENT_MESSAGE;
         event.window = window;
         event.data.data32[0] = [atomService atomFromCachedAtomsWithKey:[icccmService WMTakeFocus]];
-        event.data.data32[1] = [connection currentTime]; //FIXME:SET THE TIME OF THE EVENT OR UPDATE LOCALLY THE TIMESTAMP
+        event.data.data32[1] = XCB_CURRENT_TIME; // Use server's current time
         event.data.data32[2] = 0;
         event.data.data32[3] = 0;
         event.sequence = 0;
