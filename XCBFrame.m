@@ -347,13 +347,19 @@ void resizeFromLeftForEvent(xcb_motion_notify_event_t *anEvent,
 
     if (rect.size.width <= minW && anEvent->root_x > rect.position.x)
     {
-        /* FIXME: when the reducing in a fast way, the resize works but there also is a little frame movement, more noticeable
-         * doing faster movements with the mouse while reducing */
+        // When hitting minimum width, maintain the right edge position
+        // Calculate the correct left position to preserve right edge
+        int rightEdge = rect.position.x + rect.size.width;
+        int newX = rightEdge - minW;
 
         rect.size.width = minW;
+        rect.position.x = newX;
         titleBarRect.size.width = minW;
+        titleBarRect.position.x = 0; // Relative to frame
         clientRect.size.width = minW;
-        values[0] = rect.position.x;
+        clientRect.position.x = 0; // Relative to frame
+
+        values[0] = newX;
         values[1] = minW;
         xcb_configure_window(connection, [frame window], XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_WIDTH, &values);
         values[0] = 0;
@@ -479,16 +485,21 @@ void resizeFromTopForEvent(xcb_motion_notify_event_t *anEvent,
 
     if (rect.size.height <= minH + titleBarHeight && anEvent->root_y > rect.position.y)
     {
-        /* FIXME: when the reducing in a fast way, the resize works but there also is a little frame movement, more noticeable
-         * doing faster movements with the mouse while reducing */
+        // When hitting minimum height, maintain the bottom edge position
+        // Calculate the correct top position to preserve bottom edge
+        int bottomEdge = rect.position.y + rect.size.height;
+        int newY = bottomEdge - (minH + titleBarHeight);
 
         rect.size.height = minH + titleBarHeight;
+        rect.position.y = newY;
         clientRect.size.height = minH;
-        values[0] = clientRect.position.y - 1;
+        clientRect.position.y = titleBarHeight - 1; // Relative to frame
+
+        values[0] = clientRect.position.y;
         values[1] = clientRect.size.height;
         xcb_configure_window(connection, [clientWindow window], XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT, &values);
 
-        values[0] = rect.position.y;
+        values[0] = newY;
         values[1] = rect.size.height;
         xcb_configure_window(connection, [frame window], XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT, &values);
 
@@ -619,21 +630,17 @@ void resizeFromAngleForEvent(xcb_motion_notify_event_t *anEvent,
 
 - (void) moveTo:(XCBPoint)coordinates
 {
-    XCBPoint pos = [super windowRect].position;
+    // Minimal implementation for maximum performance
+    XCBPoint pos = XCBMakePoint(coordinates.x - offset.x, coordinates.y - offset.y);
 
-    pos.x = pos.x + coordinates.x - offset.x;
-    pos.y = pos.y + coordinates.y - offset.y;
-
-    int32_t values[] = {pos.x, pos.y};
-
+    uint32_t values[] = {(uint32_t)pos.x, (uint32_t)pos.y};
     xcb_configure_window([connection connection], window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values);
+    xcb_flush([connection connection]);
 
-    XCBRect newRect = XCBMakeRect(pos, XCBMakeSize([super windowRect].size.width, [super windowRect].size.height));
-    [super setWindowRect:newRect];
-
-    [super setOriginalRect:XCBMakeRect(XCBMakePoint(pos.x, pos.y),
-                                       XCBMakeSize([super originalRect].size.width,
-                                                   [super originalRect].size.height))];
+    // Update internal state only - skip expensive rect operations during drag
+    XCBRect rect = [super windowRect];
+    rect.position = pos;
+    [super setWindowRect:rect];
 }
 
 - (void) configureClient
