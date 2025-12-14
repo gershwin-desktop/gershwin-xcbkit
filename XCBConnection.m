@@ -1380,7 +1380,6 @@ static XCBConnection *sharedInstance;
 
 - (void)handleEnterNotify:(xcb_enter_notify_event_t *)anEvent
 {
-    NSLog(@"Enter notify for window: %u", anEvent->event);
     XCBWindow *window = [self windowForXCBId:anEvent->event];
 
     if ([window isKindOfClass:[XCBWindow class]] &&
@@ -1417,7 +1416,6 @@ static XCBConnection *sharedInstance;
 
 - (void)handleLeaveNotify:(xcb_leave_notify_event_t *)anEvent
 {
-    NSLog(@"Leave notify for window: %u", anEvent->event);
     /*XCBWindow *window = [self windowForXCBId:anEvent->event];
     [window description];
 
