@@ -698,7 +698,6 @@
 - (void)createMiniWindowAtPosition:(XCBPoint)position
 {
     oldRect = windowRect;
-    XCBTitleBar *titleBar;
 
     XCBSize newSize = XCBMakeSize(50, 50); //misure di prova
     XCBRect newRect = XCBMakeRect(position, newSize);
@@ -740,7 +739,6 @@
 
     atomService = nil;
     ewmhService = nil;
-    titleBar = nil;
 
     return;
 }

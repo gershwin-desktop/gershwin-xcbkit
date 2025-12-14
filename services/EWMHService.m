@@ -10,6 +10,7 @@
 #import "../functions/Transformers.h"
 #import "../enums/EEwmh.h"
 #import "../services/TitleBarSettingsService.h"
+#import <unistd.h>
 
 @implementation EWMHService
 
