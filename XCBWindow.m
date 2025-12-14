@@ -927,6 +927,28 @@
     ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:connection];
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:connection];
 
+    // Get the currently active window to check if we need to clear its focus
+    XCBWindow *rootWindow = [[self onScreen] rootWindow];
+    xcb_get_property_reply_t *reply = [ewmhService getProperty:[ewmhService EWMHActiveWindow]
+                                                  propertyType:XCB_ATOM_WINDOW
+                                                     forWindow:rootWindow
+                                                        delete:NO
+                                                        length:1];
+
+    // If there was a previously active window and it's different from us, clear keyboard grabs
+    if (reply && reply->length > 0) {
+        xcb_window_t *previousActiveWin = xcb_get_property_value(reply);
+        if (*previousActiveWin != XCB_NONE && *previousActiveWin != window) {
+            XCBWindow *previousWindow = [connection windowForXCBId:*previousActiveWin];
+            if (previousWindow) {
+                // Ungrab any keyboard that might be held by the previous window
+                xcb_ungrab_keyboard([connection connection], XCB_CURRENT_TIME);
+                NSLog(@"Released keyboard grab from previous window %u", *previousActiveWin);
+            }
+        }
+        free(reply);
+    }
+
     if (hasInputHint)
         [self setInputFocus:XCB_INPUT_FOCUS_PARENT time:[connection currentTime]];
 
@@ -952,6 +974,7 @@
     atomService = nil;
     icccmService = nil;
     ewmhService = nil;
+    rootWindow = nil;
 }
 
 - (XCBGeometryReply *)geometries
@@ -1191,8 +1214,17 @@
     [cachedWMHints setValue:[NSNumber numberWithInt:hints.icon_x] forKey:FnFromNSIntegerToNSString(ICCCMIconPositionHintX)];
     [cachedWMHints setValue:[NSNumber numberWithInt:hints.icon_y] forKey:FnFromNSIntegerToNSString(ICCCMIconPositionHintY)];
 
+    // ICCCM 4.1.7: Proper handling of InputHint flag
     if ([[cachedWMHints valueForKey:FnFromNSIntegerToNSString(ICCCMFlags)] intValue] & ICCCMInputHint)
+    {
+        // InputHint flag is set, use the actual input field value
+        hasInputHint = (hints.input == 1);
+    }
+    else
+    {
+        // InputHint flag not set, default to TRUE (assume client wants input)
         hasInputHint = YES;
+    }
 
     icccmService = nil;
 }
