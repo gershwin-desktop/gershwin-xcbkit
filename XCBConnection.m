@@ -166,7 +166,7 @@ static XCBConnection *sharedInstance;
 
     if (window != nil)
     {
-        NSLog(@"Window %u previously added", [window window]);
+        // Window already registered - skip duplicate registration
         window = nil;
         key = nil;
         return;
@@ -962,7 +962,6 @@ static XCBConnection *sharedInstance;
             default:
                 if (![[frame cursor] leftPointerSelected])
                 {
-                    NSLog(@"DEFAULT");
                     [frame showLeftPointerCursor];
                 }
                 break;

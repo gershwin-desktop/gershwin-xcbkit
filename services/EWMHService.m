@@ -549,7 +549,7 @@
 
     if (reply->length == 0 && reply->format == 0 && reply->type == 0)
     {
-        NSLog(@"Property not present");
+        // Property not present - this is normal for many windows
         free(error);
         return NULL;
     }
