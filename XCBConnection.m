@@ -100,14 +100,13 @@ static XCBConnection *sharedInstance;
 
     [self checkScreens];
 
-    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    [EWMHService sharedInstanceWithConnection:self];
     currentTime = XCB_CURRENT_TIME;
     icccmService = [ICCCMService sharedInstanceWithConnection:self];
 
     clientListIndex = 0;
 
     resizeState = NO;
-    ewmhService = nil;
 
     [self flush];
     return self;
@@ -167,7 +166,7 @@ static XCBConnection *sharedInstance;
 
     if (window != nil)
     {
-        NSLog(@"Window %u previously added", [window window]);
+        // Window already registered - skip duplicate registration
         window = nil;
         key = nil;
         return;
@@ -413,16 +412,14 @@ static XCBConnection *sharedInstance;
 - (void)handleMapNotify:(xcb_map_notify_event_t *)anEvent
 {
     XCBWindow *window = [self windowForXCBId:anEvent->window];
-    XCBTitleBar *titleBar;
     NSLog(@"[%@] The window %u is mapped!", NSStringFromClass([self class]), [window window]);
     [window setIsMapped:YES];
-    CairoDrawer *cairoDrawer;
 
     /*** FIXME: This code is just for testing ***/
     /*if ([window isKindOfClass:[XCBTitleBar class]])
     {
-        titleBar = (XCBTitleBar*)window;
-        cairoDrawer = [[CairoDrawer alloc] initWithConnection:self window:titleBar];
+        XCBTitleBar *titleBar = (XCBTitleBar*)window;
+        CairoDrawer *cairoDrawer = [[CairoDrawer alloc] initWithConnection:self window:titleBar];
         [cairoDrawer drawContent];
     }*/
 
@@ -434,7 +431,6 @@ static XCBConnection *sharedInstance;
         [NSThread detachNewThreadSelector:@selector(createPixmapDelayed) toTarget:window withObject:nil];*/
 
     window = nil;
-    cairoDrawer = nil;
 }
 
 - (void)handleUnMapNotify:(xcb_unmap_notify_event_t *)anEvent
@@ -899,11 +895,7 @@ static XCBConnection *sharedInstance;
 
 - (void)handleConfigureNotify:(xcb_configure_notify_event_t *)anEvent
 {
-    XCBWindow *window = [self windowForXCBId:anEvent->window];
-
     // NSLog(@"In configure notify for window %u: %d, %d", anEvent->window, anEvent->x, anEvent->y);
-
-    window = nil;
 
 }
 
@@ -970,7 +962,6 @@ static XCBConnection *sharedInstance;
             default:
                 if (![[frame cursor] leftPointerSelected])
                 {
-                    NSLog(@"DEFAULT");
                     [frame showLeftPointerCursor];
                 }
                 break;
@@ -1184,11 +1175,7 @@ static XCBConnection *sharedInstance;
 
 - (void)handleFocusOut:(xcb_focus_out_event_t *)anEvent
 {
-    XCBWindow *window = [self windowForXCBId:anEvent->event];
-
     NSLog(@"Focus Out event for window: %u", anEvent->event);
-
-    window = nil;
 }
 
 - (void)handleFocusIn:(xcb_focus_in_event_t *)anEvent
@@ -1216,7 +1203,6 @@ static XCBConnection *sharedInstance;
 - (void) handlePropertyNotify:(xcb_property_notify_event_t*)anEvent
 {
     XCBAtomService *atomService = [XCBAtomService sharedInstanceWithConnection:self];
-    ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:self];
 
     NSString *name = [atomService atomNameFromAtom:anEvent->atom];
     NSLog(@"Property changed for window: %u, with name: %@", anEvent->window, name);
@@ -1226,7 +1212,6 @@ static XCBConnection *sharedInstance;
     if (!window)
     {
         atomService = nil;
-        icccmService = nil;
         name = nil;
         return;
     }
@@ -1237,7 +1222,6 @@ static XCBConnection *sharedInstance;
     }
 
     atomService = nil;
-    icccmService = nil;
     name = nil;
     window = nil;
 
@@ -1380,7 +1364,6 @@ static XCBConnection *sharedInstance;
 
 - (void)handleEnterNotify:(xcb_enter_notify_event_t *)anEvent
 {
-    NSLog(@"Enter notify for window: %u", anEvent->event);
     XCBWindow *window = [self windowForXCBId:anEvent->event];
 
     if ([window isKindOfClass:[XCBWindow class]] &&
@@ -1417,7 +1400,6 @@ static XCBConnection *sharedInstance;
 
 - (void)handleLeaveNotify:(xcb_leave_notify_event_t *)anEvent
 {
-    NSLog(@"Leave notify for window: %u", anEvent->event);
     /*XCBWindow *window = [self windowForXCBId:anEvent->event];
     [window description];
 
@@ -1456,7 +1438,6 @@ static XCBConnection *sharedInstance;
     XCBWindow *window = [self windowForXCBId:anEvent->window];
     [window onScreen];
     XCBTitleBar *titleBar;
-    XCBFrame *frame; //??
     XCBRect area;
     XCBPoint position;
     XCBSize size;
@@ -1467,7 +1448,7 @@ static XCBConnection *sharedInstance;
     {
         //TODO: frame needs a pixmap too.
         NSLog(@"EXPOSE EVENT FOR WINDOW: %u of kind: %@", [window window], NSStringFromClass([window class]));
-        frame = (XCBFrame*)window;
+        XCBFrame *frame = (XCBFrame*)window;
         position = XCBMakePoint(anEvent->x, anEvent->y);
         size = XCBMakeSize(anEvent->width, anEvent->height);
         area = XCBMakeRect(position, size);
@@ -1505,7 +1486,6 @@ static XCBConnection *sharedInstance;
     {
         //NSLog(@"EXPOSE EVENT FOR WINDOW: %u of kind: %@", [window window], NSStringFromClass([window class]));
         titleBar = (XCBTitleBar *) window;
-        frame = (XCBFrame*)[titleBar parentWindow];
 
         if (!resizeState)
         {
@@ -1542,7 +1522,6 @@ static XCBConnection *sharedInstance;
 
     window = nil;
     titleBar = nil;
-    frame = nil;
 }
 
 - (void)handleReparentNotify:(xcb_reparent_notify_event_t *)anEvent
@@ -1896,5 +1875,24 @@ static XCBConnection *sharedInstance;
     icccmService = nil;
 }
 
+- (void) handleCreateNotify: (xcb_create_notify_event_t*)anEvent
+{
+    // TODO: Implement create notify handler
+}
+
+- (void) handleKeyPress: (xcb_key_press_event_t*)anEvent
+{
+    // TODO: Implement key press handler
+}
+
+- (void) handleKeyRelease: (xcb_key_release_event_t*)anEvent
+{
+    // TODO: Implement key release handler
+}
+
+- (void) handleCirculateRequest: (xcb_circulate_request_event_t*)anEvent
+{
+    // TODO: Implement circulate request handler
+}
 
 @end

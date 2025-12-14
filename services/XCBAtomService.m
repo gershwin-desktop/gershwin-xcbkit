@@ -49,7 +49,6 @@
     
     if (atomValue != nil)
     {
-        NSLog(@"Atom previously cached!");
         xcb_atom_t value = [atomValue unsignedIntValue];
         atomValue = nil;
         return value;
