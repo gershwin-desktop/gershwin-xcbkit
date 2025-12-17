@@ -1226,6 +1226,30 @@ static XCBConnection *sharedInstance;
         [window refreshCachedWMHints];
     }
 
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+
+    if ([name isEqualToString:[ewmhService EWMHWMWindowType]])
+    {
+        void *windowTypeReply = [ewmhService getProperty:[ewmhService EWMHWMWindowType]
+                                            propertyType:XCB_ATOM_ATOM
+                                               forWindow:window
+                                                  delete:NO
+                                                  length:UINT32_MAX];
+        if (windowTypeReply)
+        {
+            xcb_atom_t *atom = (xcb_atom_t *) xcb_get_property_value(windowTypeReply);
+
+            if (*atom == [[ewmhService atomService] atomFromCachedAtomsWithKey:[ewmhService EWMHWMWindowTypeDesktop]])
+            {
+                NSLog(@"PropertyNotify: Window %u identified as desktop type - stacking below", anEvent->window);
+                [window setWindowType:[ewmhService EWMHWMWindowTypeDesktop]];
+                [window stackBelow];
+            }
+            free(windowTypeReply);
+        }
+    }
+
+    ewmhService = nil;
     atomService = nil;
     name = nil;
     window = nil;
