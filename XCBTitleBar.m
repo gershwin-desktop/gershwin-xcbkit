@@ -43,6 +43,12 @@
 
 - (void) drawArcsForColor:(TitleBarColor)aColor
 {
+    // Check if GSTheme is active - if so, skip Cairo button drawing entirely
+    if ([self isGSThemeActive]) {
+        NSLog(@"XCBTitleBar: Skipping Cairo button arc drawing - GSTheme is active");
+        return;
+    }
+
     XCBColor stopColor = XCBMakeColor(1,1,1,1);
     XCBWindow *rootWindow = [parentWindow parentWindow];
     XCBScreen *scr = [rootWindow screen];
@@ -113,11 +119,17 @@
 
 - (void) drawTitleBarForColor:(TitleBarColor)aColor
 {
+    // Check if GSTheme is active - if so, skip Cairo titlebar background drawing
+    if ([self isGSThemeActive]) {
+        NSLog(@"XCBTitleBar: Skipping Cairo titlebar background drawing - GSTheme is active");
+        return;
+    }
+
     XCBColor aux;
-    
+
     if (aColor == TitleBarUpColor)
         aux = titleBarUpColor;
-    
+
     if (aColor == TitleBarDownColor)
         aux = titleBarDownColor;
 
@@ -167,6 +179,12 @@
 
 - (void) generateButtons
 {
+    // Check if GSTheme is active - if so, skip XCB button generation entirely
+    if ([self isGSThemeActive]) {
+        NSLog(@"XCBTitleBar: Skipping XCB button generation - GSTheme will handle buttons");
+        return;
+    }
+
     XCBWindow *rootWindow = [parentWindow parentWindow];
     XCBScreen *screen = [rootWindow screen];
     XCBVisual *rootVisual = [[XCBVisual alloc] initWithVisualId:[screen screen]->root_visual];
@@ -304,6 +322,13 @@
 - (void)drawTitleBarComponents
 {
     [super drawArea:[super windowRect]];
+
+    // Check if GSTheme is active - if so, skip Cairo button drawing
+    if ([self isGSThemeActive]) {
+        NSLog(@"XCBTitleBar: Skipping Cairo button drawing - GSTheme is active");
+        return;
+    }
+
     XCBRect area = [hideWindowButton windowRect];
     area.position.x = 0;
     area.position.y = 0;
@@ -315,6 +340,12 @@
 
 - (void) drawTitleBarComponentsPixmaps
 {
+    // Check if GSTheme is active - if so, skip Cairo titlebar and button drawing
+    if ([self isGSThemeActive]) {
+        NSLog(@"XCBTitleBar: Skipping Cairo titlebar/button pixmap drawing - GSTheme is active");
+        return;
+    }
+
     [self drawTitleBarForColor:TitleBarUpColor];
     [self drawTitleBarForColor:TitleBarDownColor];
     [self drawArcsForColor:TitleBarUpColor];
@@ -331,6 +362,12 @@
 
 - (void)putButtonsBackgroundPixmaps:(BOOL)aValue
 {
+    // Check if GSTheme is active - if so, skip Cairo button background setup
+    if ([self isGSThemeActive]) {
+        NSLog(@"XCBTitleBar: Skipping Cairo button background setup - GSTheme is active");
+        return;
+    }
+
     [hideWindowButton clearArea:[hideWindowButton windowRect] generatesExposure:NO];
     [minimizeWindowButton clearArea:[minimizeWindowButton windowRect] generatesExposure:NO];
     [hideWindowButton clearArea:[maximizeWindowButton windowRect] generatesExposure:NO];
@@ -396,5 +433,19 @@
     ewmhService = nil;
 }
 
+
+- (BOOL)isGSThemeActive
+{
+    // Check if GSTheme integration is enabled in the window manager
+    // We can detect this by checking for a specific environment variable or user default
+    // that the window manager sets when GSTheme is active
+
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    BOOL gsthemeEnabled = [defaults boolForKey:@"UROSWMGSThemeEnabled"];
+
+    NSLog(@"XCBTitleBar: Checking GSTheme status - UROSWMGSThemeEnabled = %d", gsthemeEnabled);
+
+    return gsthemeEnabled;
+}
 
 @end
