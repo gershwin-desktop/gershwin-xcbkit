@@ -64,4 +64,8 @@ XCB_EVENT_MASK_KEY_PRESS
 - (NSString*) windowTitle;
 
 - (xcb_arc_t*) arcs;
+
+// GSTheme integration
+- (BOOL) isGSThemeActive;
+
 @end
