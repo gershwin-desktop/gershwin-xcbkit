@@ -564,18 +564,15 @@ static XCBConnection *sharedInstance;
                         {
                             [groupedFrame setIsMinimized:NO];
                             [groupedFrame setNormalState];
+                            // Stack ALL grouped windows above other apps
+                            [groupedFrame stackAbove];
                         }
                         [groupedWindow setIsMinimized:NO];
                         [groupedWindow setNormalState];
 
-                        // Focus and stack (but only do this for the originally requested window)
+                        // Focus only the originally requested window
                         if ([groupedWindow window] == [window window])
                         {
-                            if (groupedFrame)
-                            {
-                                [groupedFrame stackAbove];
-                            }
-
                             if (groupedTitleBar)
                             {
                                 [groupedTitleBar setIsAbove:YES];
