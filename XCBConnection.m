@@ -504,7 +504,144 @@ static XCBConnection *sharedInstance;
     {
         NSLog(@"Window %u already managed by the window manager.", [window window]);
         isManaged = YES;
-        [self mapWindow:window];
+
+        // Check if this window has a frame parent (meaning it was decorated)
+        if ([[window parentWindow] isKindOfClass:[XCBFrame class]])
+        {
+            XCBFrame *frame = (XCBFrame *)[window parentWindow];
+            XCBTitleBar *titleBar = (XCBTitleBar *)[frame childWindowForKey:TitleBar];
+
+            NSLog(@"[MapRequest] Window has frame parent %u", [frame window]);
+
+            // If the frame is minimized, this is a restoration request
+            if ([frame isMinimized] || [window isMinimized])
+            {
+                NSLog(@"[MapRequest] Restoring minimized window from GNUstep");
+
+                // Check if this window belongs to a group (has a leader)
+                XCBWindow *leader = [window leaderWindow];
+
+                if (leader && [leader window] != XCB_NONE)
+                {
+                    NSLog(@"[MapRequest] Window %u has leader %u, restoring all grouped windows",
+                          [window window], [leader window]);
+
+                    // Find and restore all windows with the same leader
+                    NSArray *allWindows = [windowsMap allValues];
+                    for (XCBWindow *groupedWindow in allWindows)
+                    {
+                        // Skip windows that aren't minimized or don't share the same leader
+                        if (![groupedWindow isMinimized])
+                            continue;
+
+                        XCBWindow *groupedLeader = [groupedWindow leaderWindow];
+                        if (!groupedLeader || [groupedLeader window] != [leader window])
+                            continue;
+
+                        // This window is part of the group and minimized - restore it
+                        NSLog(@"[MapRequest] Restoring grouped window %u", [groupedWindow window]);
+
+                        XCBFrame *groupedFrame = nil;
+                        XCBTitleBar *groupedTitleBar = nil;
+
+                        if ([[groupedWindow parentWindow] isKindOfClass:[XCBFrame class]])
+                        {
+                            groupedFrame = (XCBFrame *)[groupedWindow parentWindow];
+                            groupedTitleBar = (XCBTitleBar *)[groupedFrame childWindowForKey:TitleBar];
+
+                            [self mapWindow:groupedFrame];
+
+                            if (groupedTitleBar)
+                            {
+                                [self mapWindow:groupedTitleBar];
+                            }
+                        }
+
+                        [self mapWindow:groupedWindow];
+
+                        // Clear minimized state
+                        if (groupedFrame)
+                        {
+                            [groupedFrame setIsMinimized:NO];
+                            [groupedFrame setNormalState];
+                        }
+                        [groupedWindow setIsMinimized:NO];
+                        [groupedWindow setNormalState];
+
+                        // Focus and stack (but only do this for the originally requested window)
+                        if ([groupedWindow window] == [window window])
+                        {
+                            if (groupedFrame)
+                            {
+                                [groupedFrame stackAbove];
+                            }
+
+                            if (groupedTitleBar)
+                            {
+                                [groupedTitleBar setIsAbove:YES];
+                                [groupedTitleBar drawTitleBarComponents];
+                                [self drawAllTitleBarsExcept:groupedTitleBar];
+                            }
+
+                            [groupedWindow focus];
+                        }
+                    }
+                }
+                else
+                {
+                    // No leader/group - restore just this window
+                    NSLog(@"[MapRequest] No window group, restoring single window");
+
+                    [self mapWindow:frame];
+
+                    if (titleBar)
+                    {
+                        [self mapWindow:titleBar];
+                    }
+
+                    [self mapWindow:window];
+
+                    // Clear minimized state
+                    [frame setIsMinimized:NO];
+                    [window setIsMinimized:NO];
+                    [frame setNormalState];
+                    [window setNormalState];
+
+                    // Bring to front and focus
+                    [frame stackAbove];
+
+                    if (titleBar)
+                    {
+                        [titleBar setIsAbove:YES];
+                        [titleBar drawTitleBarComponents];
+                        [self drawAllTitleBarsExcept:titleBar];
+                    }
+
+                    [window focus];
+                }
+
+                NSLog(@"[MapRequest] Restoration complete");
+            }
+            else
+            {
+                // Normal map for non-minimized window
+                [self mapWindow:frame];
+
+                if (titleBar)
+                {
+                    [self mapWindow:titleBar];
+                }
+
+                [self mapWindow:window];
+            }
+        }
+        else
+        {
+            NSLog(@"[MapRequest] Window has no frame parent, mapping directly");
+            // No frame, just map the window
+            [self mapWindow:window];
+        }
+
         window = nil;
         ewmhService = nil;
         return;
@@ -1270,10 +1407,7 @@ static XCBConnection *sharedInstance;
     XCBFrame *frame;
     XCBWindow *clientWindow;
 
-    XCBScreen *screen;
-    XCBVisual *visual;
-
-    CairoDrawer *drawer;
+    ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:self];
     window = [self windowForXCBId:anEvent->window];
 
     if (window == nil && frame == nil && titleBar == nil)
@@ -1284,8 +1418,6 @@ static XCBConnection *sharedInstance;
             [ewmhService handleClientMessage:atomMessageName forWindow:window data:anEvent->data];
         }
 
-        screen = nil;
-        visual = nil;
         atomService = nil;
         ewmhService = nil;
         atomMessageName = nil;
@@ -1340,14 +1472,14 @@ static XCBConnection *sharedInstance;
         anEvent->data.data32[0] == ICCCM_WM_STATE_ICONIC &&
         ![frame isMinimized])
     {
+        NSLog(@"[WM_CHANGE_STATE] Minimizing window %u - just hiding", anEvent->window);
 
+        // Simply hide the windows - no preview, no mini window
         if (frame != nil)
         {
-            drawer = [[CairoDrawer alloc] initWithConnection:self window:clientWindow];
-            [drawer makePreviewImage];
-            XCBPoint position = XCBMakePoint(100, 100); //tmp position until i dont have a dock bar
-            [frame createMiniWindowAtPosition:position];
             [frame setIconicState];
+            [frame setIsMinimized:YES];
+            [self unmapWindow:frame];
         }
 
         if (titleBar != nil)
@@ -1358,35 +1490,54 @@ static XCBConnection *sharedInstance;
         if (clientWindow)
         {
             [clientWindow setIconicState];
+            [clientWindow setIsMinimized:YES];
             [self unmapWindow:clientWindow];
-            [frame updateAttributes];
-            screen = [frame onScreen];
-            [frame setScreen:screen];
-            xcb_visualid_t visualid = [[frame attributes] visualId];
-            visual = [[XCBVisual alloc] initWithVisualId:visualid
-                                          withVisualType:xcb_aux_find_visual_by_id([screen screen], visualid)];
-            [drawer setVisual:visual];
-            [drawer setWindow:frame];
-            [drawer setPreviewImage];
-            //[self unmapWindow:frame];
         }
 
+        NSLog(@"[WM_CHANGE_STATE] Window minimized (hidden)");
     }
-    else if ([frame isMinimized])
+    else if ([frame isMinimized] &&
+             anEvent->type == [atomService atomFromCachedAtomsWithKey:[icccmService WMChangeState]] &&
+             anEvent->format == 32 &&
+             anEvent->data.data32[0] != ICCCM_WM_STATE_ICONIC)
     {
-        [frame restoreFromIconified];
+        NSLog(@"[WM_CHANGE_STATE] Restoring window %u", anEvent->window);
+
+        if (frame != nil)
+        {
+            [self mapWindow:frame];
+            [frame setIsMinimized:NO];
+            [frame setNormalState];
+        }
+
+        if (titleBar != nil)
+        {
+            [self mapWindow:titleBar];
+            [titleBar drawTitleBarComponents];
+        }
+
+        if (clientWindow)
+        {
+            [self mapWindow:clientWindow];
+            [clientWindow setIsMinimized:NO];
+            [clientWindow setNormalState];
+        }
+
+        [frame stackAbove];
+        [clientWindow focus];
+        [self drawAllTitleBarsExcept:titleBar];
+
+        NSLog(@"[WM_CHANGE_STATE] Window restored");
     }
 
     window = nil;
     titleBar = nil;
     frame = nil;
     clientWindow = nil;
-    drawer = nil;
-    screen = nil;
-    visual = nil;
     atomService = nil;
     atomMessageName = nil;
     ewmhService = nil;
+    icccmService = nil;
 
     return;
 }
