@@ -927,6 +927,8 @@
     ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:connection];
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:connection];
 
+    NSLog(@"[Focus] Setting focus to window %u (hasInputHint=%d)", window, hasInputHint);
+
     // Get the currently active window to check if we need to clear its focus
     XCBWindow *rootWindow = [[self onScreen] rootWindow];
     xcb_get_property_reply_t *reply = [ewmhService getProperty:[ewmhService EWMHActiveWindow]
@@ -943,19 +945,24 @@
             if (previousWindow) {
                 // Ungrab any keyboard that might be held by the previous window
                 xcb_ungrab_keyboard([connection connection], XCB_CURRENT_TIME);
-                NSLog(@"Released keyboard grab from previous window %u", *previousActiveWin);
+                NSLog(@"[Focus] Released keyboard grab from previous window %u", *previousActiveWin);
             }
         }
         free(reply);
     }
 
-    if (hasInputHint)
+    if (hasInputHint) {
+        NSLog(@"[Focus] Window %u accepts input - calling xcb_set_input_focus", window);
         [self setInputFocus:XCB_INPUT_FOCUS_PARENT time:[connection currentTime]];
+    } else {
+        NSLog(@"[Focus] Window %u does NOT accept input (hasInputHint=NO)", window);
+    }
 
     /*** check for the WMTakeFocus protocol ***/
 
     if ([icccmService hasProtocol:[icccmService WMTakeFocus] forWindow:self])
     {
+        NSLog(@"[Focus] Window %u supports WM_TAKE_FOCUS protocol - sending client message", window);
         event.type = [atomService atomFromCachedAtomsWithKey:[icccmService WMProtocols]];
         event.format = 32;
         event.response_type = XCB_CLIENT_MESSAGE;
@@ -969,6 +976,7 @@
         [connection sendEvent:(const char*) &event toClient:self propagate:NO];
     }
 
+    NSLog(@"[Focus] Updating _NET_ACTIVE_WINDOW to %u", window);
     [ewmhService updateNetActiveWindow:self];
 
     atomService = nil;

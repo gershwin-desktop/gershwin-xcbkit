@@ -77,23 +77,26 @@
         if (!replace)
             return NO;
 
+        xcb_window_t oldOwnerWindow = [currentOwner window];
+        NSLog(@"[XCBSelection] Current owner is window %u, attempting replacement", oldOwnerWindow);
+
+        // ICCCM §2.8: Set ourselves as the new owner
+        // The old owner will receive a SelectionClear event and should clean itself up
         [self setOwner:aWindow];
-
-        XCBRect geometry = XCBInvalidRect;
-
-        do
-        {
-            geometry = [[currentOwner geometries] rect];
-        } while (FnCheckXCBRectIsValid(geometry));
+        
+        NSLog(@"[XCBSelection] Successfully replaced old owner window %u", oldOwnerWindow);
+        NSLog(@"[XCBSelection] Old WM should receive SelectionClear and terminate gracefully");
 
         aquired = YES;
     }
     else
     {
+        NSLog(@"[XCBSelection] No current owner, acquiring selection");
         [self setOwner:aWindow];
         aquired = YES;
     }
 
+    // ICCCM §2.8: Send MANAGER ClientMessage to announce new manager
     XCBScreen *screen = [aWindow onScreen];
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:connection];
     
@@ -107,7 +110,12 @@
     ev.data.data32[2] = [aWindow window];
     ev.data.data32[3] = ev.data.data32[4] = 0;
     
-    xcb_send_event([connection connection], false, [screen screen]->root, 0xFFFFFF, (char*)&ev);
+    // ICCCM §2.8: Send to root with SubstructureNotifyMask | SubstructureRedirectMask
+    uint32_t eventMask = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
+    xcb_send_event([connection connection], false, [screen screen]->root, eventMask, (char*)&ev);
+    xcb_flush([connection connection]);
+    
+    NSLog(@"[XCBSelection] Sent MANAGER ClientMessage for atom %u with timestamp %u", atom, [connection currentTime]);
     
     screen = nil;
     ewmhService = nil;

@@ -208,6 +208,9 @@
     [connection mapWindow:clientWindow];
     uint32_t border[] = {0};
     xcb_configure_window([connection connection], [clientWindow window], XCB_CONFIG_WINDOW_BORDER_WIDTH, border);
+    
+    // Flush to ensure reparent and map operations complete before continuing
+    [connection flush];
 
     titleBar = nil;
     clientWindow = nil;

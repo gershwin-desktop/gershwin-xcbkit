@@ -1133,6 +1133,16 @@ static XCBConnection *sharedInstance;
     XCBTitleBar *titleBar;
     XCBWindow *clientWindow;
 
+    // CRITICAL: Always allow events to prevent frozen pointer/keyboard
+    // This must be done EARLY before any logic that might return early
+    xcb_allow_events(connection, XCB_ALLOW_REPLAY_POINTER, anEvent->time);
+    NSLog(@"[Focus] Button press on window %u - allowing events to unfreeze pointer", anEvent->event);
+
+    if (!window) {
+        NSLog(@"[Focus] Button press on unknown window %u - events already allowed", anEvent->event);
+        return;
+    }
+
     if ([window isCloseButton])
     {
         XCBFrame *frame = (XCBFrame *) [[window parentWindow] parentWindow];
@@ -1215,14 +1225,12 @@ static XCBConnection *sharedInstance;
 
     if ([window isKindOfClass:[XCBFrame class]])
     {
-        xcb_allow_events(connection, XCB_ALLOW_REPLAY_POINTER, anEvent->time);
         frame = (XCBFrame *) window;
         clientWindow = [frame childWindowForKey:ClientWindow];
     }
 
     if ([window isKindOfClass:[XCBTitleBar class]])
     {
-        xcb_allow_events(connection, XCB_ALLOW_REPLAY_POINTER, anEvent->time);
         frame = (XCBFrame *) [window parentWindow];
         clientWindow = [frame childWindowForKey:ClientWindow];
     }
@@ -1230,7 +1238,6 @@ static XCBConnection *sharedInstance;
     if ([window isKindOfClass:[XCBWindow class]] &&
         [[window parentWindow] isKindOfClass:[XCBFrame class]])
     {
-        xcb_allow_events(connection, XCB_ALLOW_REPLAY_POINTER, anEvent->time);
         frame = (XCBFrame *) [window parentWindow];
         clientWindow = [frame childWindowForKey:ClientWindow];
         EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
@@ -1239,6 +1246,12 @@ static XCBConnection *sharedInstance;
 
     }
 
+    if (!clientWindow || !frame) {
+        NSLog(@"[Focus] Button press on window %u - no client/frame found", anEvent->event);
+        return;
+    }
+
+    NSLog(@"[Focus] Setting focus to client window %u", [clientWindow window]);
     [clientWindow focus];
     [frame stackAbove];
 
@@ -1946,20 +1959,37 @@ static XCBConnection *sharedInstance;
 
         if (!attributesChanged)
         {
-            NSLog(@"Can't register as window manager. Another one running? Use --replace");
-            //NSLog(@"Trying co-runnig...");
-            //values[0] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
+            NSLog(@"[WM] Can't register as WM (root SubstructureRedirect busy). Attempting replace via selection");
 
-            //attributesChanged = [self changeAttributes:values forWindow:rootWindow checked:YES];
+            NSString *atomName = [NSString stringWithFormat:@"WM_S%d", screenId];
+            [[ewmhService atomService] cacheAtom:atomName];
+            xcb_atom_t internedAtom = [[ewmhService atomService] atomFromCachedAtomsWithKey:atomName];
+            XCBSelection *selector = [[XCBSelection alloc] initWithConnection:self andAtom:internedAtom];
 
-            /*if (!attributesChanged)
-             {
-             NSLog(@"Can't co-running too");
-             }*/
-            rootWindow = nil;
-            screen = nil;
-            ewmhService = nil;
-            return NO;
+            BOOL acquired = [selector aquireWithWindow:selectionWindow replace:YES];
+            if (!acquired)
+            {
+                NSLog(@"[WM] Failed to acquire WM selection for replacement");
+                rootWindow = nil;
+                screen = nil;
+                selector = nil;
+                atomName = nil;
+                ewmhService = nil;
+                return NO;
+            }
+
+            attributesChanged = [rootWindow changeAttributes:values withMask:XCB_CW_EVENT_MASK checked:YES];
+
+            if (!attributesChanged)
+            {
+                NSLog(@"[WM] Replacement attempt failed; still cannot set SubstructureRedirect");
+                rootWindow = nil;
+                screen = nil;
+                selector = nil;
+                atomName = nil;
+                ewmhService = nil;
+                return NO;
+            }
         }
 
         NSLog(@"Subtructure redirect was set to the root window");
@@ -1980,7 +2010,7 @@ static XCBConnection *sharedInstance;
 
     XCBSelection *selector = [[XCBSelection alloc] initWithConnection:self andAtom:internedAtom];
 
-    BOOL aquired = [selector aquireWithWindow:selectionWindow replace:replace];
+    BOOL aquired = [selector aquireWithWindow:selectionWindow replace:YES];
 
     if (aquired)
     {
