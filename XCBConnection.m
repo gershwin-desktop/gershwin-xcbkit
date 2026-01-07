@@ -757,6 +757,44 @@ static XCBConnection *sharedInstance;
                 return;
             }
 
+            if (*atom == [[ewmhService atomService] atomFromCachedAtomsWithKey:[ewmhService EWMHWMWindowTypePopupMenu]])
+            {
+                NSLog(@"PopupMenu window %u to be registered", [window window]);
+                [self registerWindow:window];
+                [self mapWindow:window];
+                [window setDecorated:NO];
+                XCBWindow *parentWindow = [[XCBWindow alloc] initWithXCBWindow:anEvent->parent andConnection:self];
+                [window setParentWindow:parentWindow];
+                [icccmService wmClassForWindow:window];
+                [window setWindowType:[ewmhService EWMHWMWindowTypePopupMenu]];
+
+                window = nil;
+                ewmhService = nil;
+                name = nil;
+                parentWindow = nil;
+                free(windowTypeReply);
+                return;
+            }
+
+            if (*atom == [[ewmhService atomService] atomFromCachedAtomsWithKey:[ewmhService EWMHWMWindowTypeDropdownMenu]])
+            {
+                NSLog(@"DropdownMenu window %u to be registered", [window window]);
+                [self registerWindow:window];
+                [self mapWindow:window];
+                [window setDecorated:NO];
+                XCBWindow *parentWindow = [[XCBWindow alloc] initWithXCBWindow:anEvent->parent andConnection:self];
+                [window setParentWindow:parentWindow];
+                [icccmService wmClassForWindow:window];
+                [window setWindowType:[ewmhService EWMHWMWindowTypeDropdownMenu]];
+
+                window = nil;
+                ewmhService = nil;
+                name = nil;
+                parentWindow = nil;
+                free(windowTypeReply);
+                return;
+            }
+
             if (*atom == [[ewmhService atomService] atomFromCachedAtomsWithKey:[ewmhService EWMHWMWindowTypeDesktop]])
             {
                 NSLog(@"Desktop window %u to be registered", [window window]);
@@ -768,6 +806,11 @@ static XCBConnection *sharedInstance;
                 [window setParentWindow:parentWindow];
                 [icccmService wmClassForWindow:window];
                 [window setWindowType:[ewmhService EWMHWMWindowTypeDesktop]];
+                
+                // Grab button on desktop window so we can track focus changes
+                // This ensures _NET_ACTIVE_WINDOW is updated when clicking on desktop
+                [window grabButton];
+                NSLog(@"[MapRequest] Grabbed button on desktop window %u for focus tracking", [window window]);
 
                 window = nil;
                 ewmhService = nil;
@@ -815,18 +858,22 @@ static XCBConnection *sharedInstance;
             
             if (atom[0] == 3 && atom[1] == 0 && atom[2] == 0 && atom[3] == 0 && atom[4] == 0)
             {
-                NSLog(@"Motif Icon: %d", [window window]);
+                NSLog(@"Motif undecorated window: %d", [window window]);
                 free(motifHints);
                 [window generateWindowIcons];
                 XCBGeometryReply *geometry = [window geometries];
-                [window setWindowRect:[geometry rect]];
+                [window setWindowRect:[geometry rect]];  
                 [window setDecorated:NO];
                 [window onScreen];
                 [window updateAttributes];
-                //[window drawIcons];
                 [self mapWindow:window];
                 [self registerWindow:window];
                 [icccmService wmClassForWindow:window];
+                
+                // Grab button on undecorated window so we can track focus changes
+                // This is needed for _NET_ACTIVE_WINDOW to be updated when clicking
+                [window grabButton];
+                NSLog(@"[MapRequest] Grabbed button on undecorated window %u for focus tracking", [window window]);
 
                 window = nil;
                 ewmhService = nil;
@@ -869,7 +916,7 @@ static XCBConnection *sharedInstance;
     [request setYPosition:[window windowRect].position.y];
     [request setWidth:[window windowRect].size.width + 1];
     [request setHeight:[window windowRect].size.height + titleHeight];
-    [request setBorderWidth:3];
+    [request setBorderWidth:1];
     [request setXcbClass:XCB_WINDOW_CLASS_INPUT_OUTPUT];
     [request setVisual:visual];
     [request setValueMask:XCB_CW_BACK_PIXEL /*| XCB_CW_BACKING_STORE*/ | XCB_CW_EVENT_MASK];
@@ -1136,10 +1183,8 @@ static XCBConnection *sharedInstance;
     // CRITICAL: Always allow events to prevent frozen pointer/keyboard
     // This must be done EARLY before any logic that might return early
     xcb_allow_events(connection, XCB_ALLOW_REPLAY_POINTER, anEvent->time);
-    NSLog(@"[Focus] Button press on window %u - allowing events to unfreeze pointer", anEvent->event);
 
     if (!window) {
-        NSLog(@"[Focus] Button press on unknown window %u - events already allowed", anEvent->event);
         return;
     }
 
@@ -1246,14 +1291,60 @@ static XCBConnection *sharedInstance;
 
     }
 
-    if (!clientWindow || !frame) {
-        NSLog(@"[Focus] Button press on window %u - no client/frame found", anEvent->event);
+    // Check if this is a menu-type window - don't change focus for menus
+    // as this would interfere with how GNUstep/AppKit manages menu focus
+    EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:self];
+    NSString *windowType = [window windowType];
+    BOOL isMenuWindow = [windowType isEqualToString:[ewmhService EWMHWMWindowTypeMenu]] ||
+                        [windowType isEqualToString:[ewmhService EWMHWMWindowTypePopupMenu]] ||
+                        [windowType isEqualToString:[ewmhService EWMHWMWindowTypeDropdownMenu]];
+    
+    // Check if this is a desktop window - don't raise desktop windows
+    BOOL isDesktopWindow = [windowType isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]];
+    // Also check clientWindow's type in case window is undecorated
+    if (!isDesktopWindow && clientWindow) {
+        NSString *clientType = [clientWindow windowType];
+        isDesktopWindow = [clientType isEqualToString:[ewmhService EWMHWMWindowTypeDesktop]];
+    }
+    ewmhService = nil;
+    
+    if (isMenuWindow) {
+        // For menu windows, just return - let the application handle its own menu events
+        window = nil;
+        clientWindow = nil;
         return;
     }
 
-    NSLog(@"[Focus] Setting focus to client window %u", [clientWindow window]);
-    [clientWindow focus];
-    [frame stackAbove];
+    // CRITICAL: ALWAYS set focus when clicking on a window
+    // This ensures that no matter what, clicking allows typing in that window
+    if (clientWindow && frame) {
+        [clientWindow focus];
+        // Don't raise desktop windows - they should always stay at the bottom
+        if (!isDesktopWindow) {
+            [frame stackAbove];
+        }
+    } else if (window && [window isKindOfClass:[XCBWindow class]]) {
+        // Fallback: If we couldn't find client/frame but have a window, focus it directly
+        [window focus];
+        // Don't raise desktop windows - they should always stay at the bottom
+        if (!isDesktopWindow) {
+            uint32_t values[] = { XCB_STACK_MODE_ABOVE };
+            xcb_configure_window(connection, [window window], XCB_CONFIG_WINDOW_STACK_MODE, values);
+            [self flush];
+        }
+    } else {
+        // Last resort: ungrab keyboard to prevent being stuck
+        xcb_ungrab_keyboard(connection, XCB_CURRENT_TIME);
+        [self flush];
+        return;
+    }
+
+    // Only proceed with frame-specific operations if we have a valid frame
+    if (!frame) {
+        window = nil;
+        clientWindow = nil;
+        return;
+    }
 
     titleBar = (XCBTitleBar *) [frame childWindowForKey:TitleBar];
     [titleBar setIsAbove:YES];
@@ -1332,24 +1423,11 @@ static XCBConnection *sharedInstance;
 
 - (void)handleFocusIn:(xcb_focus_in_event_t *)anEvent
 {
-    XCBWindow *window = [self windowForXCBId:anEvent->event];
-
-    if (anEvent->mode == XCB_NOTIFY_MODE_GRAB || anEvent->mode == XCB_NOTIFY_MODE_UNGRAB)
-        return;
-
-    switch (anEvent->detail)
-    {
-        case XCB_NOTIFY_DETAIL_ANCESTOR:
-        case XCB_NOTIFY_DETAIL_INFERIOR:
-        case XCB_NOTIFY_DETAIL_NONLINEAR_VIRTUAL:
-        case XCB_NOTIFY_DETAIL_NONLINEAR:
-            [window focus];
-            break;
-        default:
-            break;
-    }
-
-    window = nil;
+    // Don't call focus again here - it creates a feedback loop that causes high CPU usage
+    // The focus has already been set by the button press handler
+    // Just log for debugging if needed
+    // XCBWindow *window = [self windowForXCBId:anEvent->event];
+    // NSLog(@"FocusIn event for window: %u (mode=%d, detail=%d)", anEvent->event, anEvent->mode, anEvent->detail);
 }
 
 - (void) handlePropertyNotify:(xcb_property_notify_event_t*)anEvent
@@ -1583,6 +1661,19 @@ static XCBConnection *sharedInstance;
         titleBar = nil;
         frameWindow = nil;
         clientWindow = nil;
+    }
+    
+    // Handle undecorated windows (no frame parent) - these still need button grabs
+    // so we can track focus changes for _NET_ACTIVE_WINDOW
+    if (window && [window isKindOfClass:[XCBWindow class]] && ![window decorated])
+    {
+        // Check if parent is not a frame (undecorated window)
+        XCBWindow *parent = [window parentWindow];
+        if (!parent || ![parent isKindOfClass:[XCBFrame class]])
+        {
+            [window grabButton];
+            NSLog(@"[EnterNotify] Grabbed button on undecorated window %u", [window window]);
+        }
     }
 
     window = nil;

@@ -927,48 +927,23 @@
     ICCCMService *icccmService = [ICCCMService sharedInstanceWithConnection:connection];
     EWMHService *ewmhService = [EWMHService sharedInstanceWithConnection:connection];
 
-    NSLog(@"[Focus] Setting focus to window %u (hasInputHint=%d)", window, hasInputHint);
+    // CRITICAL SAFETY: Ungrab keyboard once to prevent stuck keyboard focus
+    xcb_ungrab_keyboard([connection connection], XCB_CURRENT_TIME);
 
-    // Get the currently active window to check if we need to clear its focus
-    XCBWindow *rootWindow = [[self onScreen] rootWindow];
-    xcb_get_property_reply_t *reply = [ewmhService getProperty:[ewmhService EWMHActiveWindow]
-                                                  propertyType:XCB_ATOM_WINDOW
-                                                     forWindow:rootWindow
-                                                        delete:NO
-                                                        length:1];
-
-    // If there was a previously active window and it's different from us, clear keyboard grabs
-    if (reply && reply->length > 0) {
-        xcb_window_t *previousActiveWin = xcb_get_property_value(reply);
-        if (*previousActiveWin != XCB_NONE && *previousActiveWin != window) {
-            XCBWindow *previousWindow = [connection windowForXCBId:*previousActiveWin];
-            if (previousWindow) {
-                // Ungrab any keyboard that might be held by the previous window
-                xcb_ungrab_keyboard([connection connection], XCB_CURRENT_TIME);
-                NSLog(@"[Focus] Released keyboard grab from previous window %u", *previousActiveWin);
-            }
-        }
-        free(reply);
-    }
-
-    if (hasInputHint) {
-        NSLog(@"[Focus] Window %u accepts input - calling xcb_set_input_focus", window);
-        [self setInputFocus:XCB_INPUT_FOCUS_PARENT time:[connection currentTime]];
-    } else {
-        NSLog(@"[Focus] Window %u does NOT accept input (hasInputHint=NO)", window);
-    }
+    // ALWAYS set input focus, regardless of hasInputHint
+    // This ensures we can type in the window even if hints are incorrect
+    [self setInputFocus:XCB_INPUT_FOCUS_PARENT time:[connection currentTime]];
 
     /*** check for the WMTakeFocus protocol ***/
 
     if ([icccmService hasProtocol:[icccmService WMTakeFocus] forWindow:self])
     {
-        NSLog(@"[Focus] Window %u supports WM_TAKE_FOCUS protocol - sending client message", window);
         event.type = [atomService atomFromCachedAtomsWithKey:[icccmService WMProtocols]];
         event.format = 32;
         event.response_type = XCB_CLIENT_MESSAGE;
         event.window = window;
         event.data.data32[0] = [atomService atomFromCachedAtomsWithKey:[icccmService WMTakeFocus]];
-        event.data.data32[1] = XCB_CURRENT_TIME; // Use server's current time
+        event.data.data32[1] = XCB_CURRENT_TIME;
         event.data.data32[2] = 0;
         event.data.data32[3] = 0;
         event.sequence = 0;
@@ -976,13 +951,11 @@
         [connection sendEvent:(const char*) &event toClient:self propagate:NO];
     }
 
-    NSLog(@"[Focus] Updating _NET_ACTIVE_WINDOW to %u", window);
     [ewmhService updateNetActiveWindow:self];
 
     atomService = nil;
     icccmService = nil;
     ewmhService = nil;
-    rootWindow = nil;
 }
 
 - (XCBGeometryReply *)geometries
