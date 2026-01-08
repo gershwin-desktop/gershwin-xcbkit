@@ -839,7 +839,9 @@ static XCBConnection *sharedInstance;
                 return;
             }*/
 
-            atom = NULL; //FIXME:is this malloc'd?
+            atom = NULL; // atom points into windowTypeReply memory, cleared to avoid dangling pointer
+            free(windowTypeReply);
+            windowTypeReply = NULL;
         }
 
         /** check motif hints  **/
@@ -896,7 +898,7 @@ static XCBConnection *sharedInstance;
         [window updateRectsFromGeometries];
         [window setFirstRun:YES];
         [window setWindowType:name];
-        free(windowTypeReply);
+        // windowTypeReply already freed above if it was non-NULL
         name = nil;
     }
 

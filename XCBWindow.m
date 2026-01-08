@@ -203,9 +203,11 @@
             [allowedActions addObject:number];
             number = nil;
         }
-
-        free(allowed_actions);
     }
+
+    // Free the reply (allowed_actions points into it, so don't free that separately)
+    if (reply)
+        free(reply);
 
     if (allowed_actions == NULL)
     {
@@ -288,7 +290,7 @@
 
     ewmhService = nil;
     atomService = nil;
-    free(reply);
+    // reply was already freed above after extracting allowed_actions
 }
 
 - (void)createPixmap
